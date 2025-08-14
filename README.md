@@ -1,1 +1,1 @@
-# github-api-scraper-consumer-worker
+# github-api-scraper-producer-consumer
