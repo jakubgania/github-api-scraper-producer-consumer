@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS dead_letters (
 
 SQL_INSERT_USER = """
 INSERT INTO users (login, name, bio, company, location, created_at, followers_count, following_count, status)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'imported')
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending')
 ON CONFLICT (login) DO NOTHING
 RETURNING login;
 """
@@ -201,6 +201,7 @@ def _respect_rate_limit(resp: requests.Response) -> None:
   # If we're out of rate limit, sleep until reset
   try:
     remaining = int(resp.headers.get("X-RateLimit-Remaining", "1"))
+    print("RATE LIMIT", remaining)
     if remaining <= 0:
       reset = int(resp.headers.get("X-RateLimit-Reset", "0"))
       now = int(time.time())
@@ -220,6 +221,11 @@ def fetch_github_user(session: requests.Session, username: str) -> tuple[Optiona
       timeout=(HTTP_CONNECT_TIMEOUT_S, HTTP_READ_TIMEOUT_S),
     )
     status = response.status_code
+
+     # Log rate limit headers
+    logger.info(f"Rate Limit Remaining: {response.headers.get('X-RateLimit-Remaining')}")
+    logger.info(f"Rate Limit Reset: {response.headers.get('X-RateLimit-Reset')}")
+
     # Respect rate limit based on headers
     _respect_rate_limit(response)
 
@@ -402,6 +408,10 @@ def consumer() -> None:
       # 3600 / 0.8 = 4500 
       # 4500 from 5000 = 90%
       time.sleep(0.8)
+
+      # 3600 / 0.75 = 4800
+      # 4800 from 5000 = 96%
+      # time.sleep(0.75)
   
   finally:
     elapsed = time.time() - started
