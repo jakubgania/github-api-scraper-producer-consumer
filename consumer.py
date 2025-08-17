@@ -128,7 +128,7 @@ def wait_for_postgres(dsn: str, max_wait_s: int) -> None:
       with psycopg.connect(dsn) as conn:
         with conn.cursor() as cur:
           cur.execute("SELECT 1;")
-          logger.info("Postgres is ready")
+          logger.info("✅ Postgres is ready")
           return
     except Exception as e:
       attempt += 1
@@ -144,11 +144,11 @@ def init_db(dsn: str) -> None:
     with conn.cursor() as cur:
       cur.execute(SQL_INIT)
       conn.commit()
-  logger.info("Database schema ensured")
+  logger.info("✅ Database schema ensured")
 
 def create_session() -> requests.Session:
     if not GITHUB_API_TOKEN:
-        logger.critical("GITHUB_API_TOKEN is not set")
+        logger.critical("💥 GITHUB_API_TOKEN is not set")
         raise SystemExit(2)
 
     session = requests.Session()
@@ -201,12 +201,11 @@ def _respect_rate_limit(resp: requests.Response) -> None:
   # If we're out of rate limit, sleep until reset
   try:
     remaining = int(resp.headers.get("X-RateLimit-Remaining", "1"))
-    print("RATE LIMIT", remaining)
     if remaining <= 0:
       reset = int(resp.headers.get("X-RateLimit-Reset", "0"))
       now = int(time.time())
       sleep_for = max(0, reset - now) + 1
-      logger.warning("Rate limit exhausted. Sleeping %ss until reset...", sleep_for)
+      logger.warning("🛑 Rate limit exhausted. Sleeping %ss until reset...", sleep_for)
       time.sleep(sleep_for)
   except Exception:
     # Be conservative if headers are missing/malformed
@@ -224,7 +223,18 @@ def fetch_github_user(session: requests.Session, username: str) -> tuple[Optiona
 
      # Log rate limit headers
     logger.info(f"Rate Limit Remaining: {response.headers.get('X-RateLimit-Remaining')}")
-    logger.info(f"Rate Limit Reset: {response.headers.get('X-RateLimit-Reset')}")
+    # logger.info(f"Rate Limit Reset: {response.headers.get('X-RateLimit-Reset')}")
+
+    # Fetch and convert the reset timestamp
+    reset_timestamp = int(response.headers.get('X-RateLimit-Reset'))
+    current_time = int(time.time())  # current time in seconds since the epoch
+    time_left = reset_timestamp - current_time  # Calculate the time left in seconds
+    
+    # Calculate minutes and seconds
+    minutes_left = time_left // 60
+    seconds_left = time_left % 60
+    
+    logger.info(f"Rate Limit Reset: {minutes_left} minutes, {seconds_left} seconds remaining")
 
     # Respect rate limit based on headers
     _respect_rate_limit(response)
@@ -350,9 +360,9 @@ def process_username(db: DB, session: requests.Session, username: str) -> None:
   try:
     inserted = db.insert_user(user)
     if inserted:
-      logger.info("Saved %s to DB", username)
+      logger.info("✅ Saved %s to DB", username)
     else:
-      logger.info("User %s already in DB, skipped", username)
+      logger.info("⚠️ User %s already in DB, skipped", username)
   except Exception:
     # If DB insert fails, record as dead-letter for later reprocessing
     db.record_dead_letter(
@@ -365,7 +375,7 @@ def process_username(db: DB, session: requests.Session, username: str) -> None:
 stop_flag = False
 
 def consumer() -> None:
-  logger.info("Starting GitHub consumer...")
+  logger.info("✅ Starting GitHub consumer...")
 
   wait_for_postgres(POSTGRES_DSN, POSTGRES_WAIT_MAX_S)
   init_db(POSTGRES_DSN)
@@ -394,7 +404,7 @@ def consumer() -> None:
 
       _, username = result
       now = datetime.now(timezone.utc).strftime("%H:%M:%S")
-      logger.info("[%s] Got login from Redis: %s", now, username)
+      logger.info("[%s] 📡 Got login from Redis: %s", now, username)
 
       # Process one username
       try:
@@ -412,6 +422,8 @@ def consumer() -> None:
       # 3600 / 0.75 = 4800
       # 4800 from 5000 = 96%
       # time.sleep(0.75)
+
+      print(" ")
   
   finally:
     elapsed = time.time() - started
