@@ -79,15 +79,20 @@ logger = logging.getLogger("consumer")
 
 SQL_INIT = """
 CREATE TABLE IF NOT EXISTS users (
-  login TEXT PRIMARY KEY,
-  name TEXT,
-  bio TEXT,
-  company TEXT,
-  location TEXT,
-  created_at TIMESTAMPTZ,
-  followers_count INT,
-  following_count INT,
-  status TEXT DEFAULT 'pending'
+  login                TEXT PRIMARY KEY,
+  name                 TEXT,
+  email                TEXT,
+  bio                  TEXT,
+  company              TEXT,
+  location             TEXT,
+  created_at           TIMESTAMPTZ,
+  is_hireable          BOOLEAN,
+  repositories_count   INT,
+  followers_count      INT,
+  following_count      INT,
+  twitter_username     TEXT,
+  website_url          TEXT,
+  status               TEXT DEFAULT 'pending'
 );
 CREATE INDEX IF NOT EXISTS idx_users_company ON users (company);
 CREATE INDEX IF NOT EXISTS idx_users_location ON users (location);
@@ -104,8 +109,13 @@ CREATE TABLE IF NOT EXISTS dead_letters (
 """
 
 SQL_INSERT_USER = """
-INSERT INTO users (login, name, bio, company, location, created_at, followers_count, following_count, status)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending')
+INSERT INTO users (
+  login, name, email, bio, company, location, created_at, is_hireable,
+  repositories_count, followers_count, following_count, twitter_username, website_url
+) VALUES (
+   %s, %s, %s, %s, %s, %s, %s, %s,
+   %s, %s, %s, %s, 'pending'
+)
 ON CONFLICT (login) DO NOTHING
 RETURNING login;
 """
@@ -301,6 +311,12 @@ class DB:
       if self.conn is None or self.conn.closed:
           self.connect()
 
+  def _cnt(node):
+    try:
+        return int((node or {}).get("totalCount") or 0)
+    except (TypeError, ValueError):
+        return 0
+
   def insert_user(self, user: Dict[str, Any]) -> bool:
     self.ensure_connection()
     try:
@@ -310,12 +326,17 @@ class DB:
           (
             user.get("login"),
             user.get("name"),
+            user.get("email"),
             user.get("bio"),
             user.get("company"),
             user.get("location"),
             user.get("createdAt"),
-            (user.get("followers") or {}).get("totalCount"),
-            (user.get("following") or {}).get("totalCount"),
+            user.get("isHireable"),
+            self._cnt(user.get("repositories")),
+            self._cnt(user.get("followers")),
+            self._cnt(user.get("following")),
+            user.get("twitterUsername"),
+            user.get("websiteUrl"),
           ),
         )
         inserted = cur.fetchone() is not None
