@@ -23,6 +23,7 @@ docker run \
 -e GITHUB_API_TOKEN=your-github-api-token \
 -e POSTGRES_DSN="postgresql://postgres:postgres@github_postgres:5432/postgres" \
 -e REDIS_HOST="redis-container" \
+--memory 128m \
 api-github-scraper
 ```
 

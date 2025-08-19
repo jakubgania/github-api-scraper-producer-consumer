@@ -178,21 +178,46 @@ def create_session() -> requests.Session:
 
 # -------------------- GitHub API --------------------
 
+# login - string
+# name - String
+# email - String
+# bio - String
+# company - String
+# location - String
+# createdAt - DateTime - An ISO-8601 encoded UTC date string
+# isHireable - Boolean
+# repositories -> totalCount - Int
+# followers -> totalCount - Int
+# following -> totalCount - Int
+# socialAccounts -> SocialAccountEdge -> SocialAccount -
+#                                                        displayName - String
+#                                                        provider - SocialAccountProvider
+#                                                        url - URI
+# twitterUsername - String
+# websiteUrl - URI
+
 BASIC_USER_QUERY = """
 query($username: String!) {
     user(login: $username) {
         login
         name
+        email
         bio
         company
         location
         createdAt
+        isHireable
+        repositories {
+          totalCount
+        }
         followers {
             totalCount
         }
         following {
             totalCount
         }
+        twitterUsername
+        websiteUrl
     }
 }
 """
