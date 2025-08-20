@@ -1,0 +1,31 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    container_name: github_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - api-github-scraper
+
+  redis:
+    image: redis
+    container_name: redis-container
+    ports:
+      - "6379:6379"
+    networks:
+      - api-github-scraper
+
+volumes:
+  postgres_data:
+
+networks:
+  api-github-scraper:
+    name: api-gtihub-scraper
+    driver: bridge
