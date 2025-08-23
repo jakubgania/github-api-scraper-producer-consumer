@@ -111,10 +111,10 @@ CREATE TABLE IF NOT EXISTS dead_letters (
 SQL_INSERT_USER = """
 INSERT INTO users (
   login, name, email, bio, company, location, created_at, is_hireable,
-  repositories_count, followers_count, following_count, twitter_username, website_url
+  repositories_count, followers_count, following_count, twitter_username, website_url, status
 ) VALUES (
    %s, %s, %s, %s, %s, %s, %s, %s,
-   %s, %s, %s, %s, 'pending'
+   %s, %s, %s, %s, %s, 'pending'
 )
 ON CONFLICT (login) DO NOTHING
 RETURNING login;
@@ -311,11 +311,11 @@ class DB:
       if self.conn is None or self.conn.closed:
           self.connect()
 
-  def _cnt(node):
-    try:
-        return int((node or {}).get("totalCount") or 0)
-    except (TypeError, ValueError):
-        return 0
+  # def _cnt(node):
+  #   try:
+  #       return int((node or {}).get("totalCount") or 0)
+  #   except (TypeError, ValueError):
+  #       return 0
 
   def insert_user(self, user: Dict[str, Any]) -> bool:
     self.ensure_connection()
@@ -332,9 +332,9 @@ class DB:
             user.get("location"),
             user.get("createdAt"),
             user.get("isHireable"),
-            self._cnt(user.get("repositories")),
-            self._cnt(user.get("followers")),
-            self._cnt(user.get("following")),
+            (user.get("repositories") or {}).get("totalCount"),
+            (user.get("followers") or {}).get("totalCount"),
+            (user.get("following") or {}).get("totalCount"),
             user.get("twitterUsername"),
             user.get("websiteUrl"),
           ),

@@ -16,6 +16,10 @@ docker build -t api-github-scraper .
 ```
 
 ```bash
+docker-compose up -d
+```
+
+```bash
 docker run \
 --name github-app-1 \
 --label type=worker \

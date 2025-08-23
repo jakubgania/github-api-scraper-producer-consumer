@@ -27,5 +27,5 @@ volumes:
 
 networks:
   api-github-scraper:
-    name: api-gtihub-scraper
+    name: api-github-scraper
     driver: bridge
