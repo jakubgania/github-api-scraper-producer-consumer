@@ -311,12 +311,6 @@ class DB:
       if self.conn is None or self.conn.closed:
           self.connect()
 
-  # def _cnt(node):
-  #   try:
-  #       return int((node or {}).get("totalCount") or 0)
-  #   except (TypeError, ValueError):
-  #       return 0
-
   def insert_user(self, user: Dict[str, Any]) -> bool:
     self.ensure_connection()
     try:
