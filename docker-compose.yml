@@ -22,6 +22,16 @@ services:
     networks:
       - api-github-scraper
 
+  redisinsight:
+    image: redis/redisinsight:latest
+    container_name: redisinsight
+    ports:
+      - "5540:5540"
+    depends_on:
+      - redis
+    networks:
+      - api-github-scraper
+
 volumes:
   postgres_data:
 
