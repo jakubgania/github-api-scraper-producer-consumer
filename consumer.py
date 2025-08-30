@@ -251,6 +251,39 @@ query($username: String!) {
 }
 """
 
+REPOSITORY_OWNER_QUERY = """
+query($login: String!) {
+  repositoryOwner(login: $login) {
+    __typename
+    login
+    avatarUrl
+    createdAt
+    repositories { totalCount }
+    ... on User {
+      name
+      bio
+      company
+      location
+      followers { totalCount }
+      following { totalCount }
+      twitterUsername
+      websiteUrl
+      email
+      isHireable
+    }
+    ... on Organization {
+      name
+      description
+      location
+      email
+      twitterUsername
+      websiteUrl
+      membersWithRole { totalCount }
+    }
+  }
+}
+"""
+
 def _respect_rate_limit(resp: requests.Response) -> None:
   # If we're out of rate limit, sleep until reset
   try:
@@ -266,7 +299,7 @@ def _respect_rate_limit(resp: requests.Response) -> None:
     pass
 
 def fetch_github_user(session: requests.Session, username: str) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], int]:
-  payload = {"query": BASIC_USER_QUERY, "variables": {"username": username}}
+  payload = {"query": REPOSITORY_OWNER_QUERY, "variables": {"username": username}}
   try:
     response = session.post(
       GITHUB_API_ENDPOINT,
@@ -280,7 +313,7 @@ def fetch_github_user(session: requests.Session, username: str) -> tuple[Optiona
     # logger.info(f"Rate Limit Reset: {response.headers.get('X-RateLimit-Reset')}")
 
     # Fetch and convert the reset timestamp
-    reset_timestamp = int(response.headers.get('X-RateLimit-Reset'))
+    reset_timestamp = int(response.headers.get('X-RateLimit-Reset'), "0")
     current_time = int(time.time())  # current time in seconds since the epoch
     time_left = reset_timestamp - current_time  # Calculate the time left in seconds
     
@@ -303,7 +336,9 @@ def fetch_github_user(session: requests.Session, username: str) -> tuple[Optiona
 
     if "errors" in data and data["errors"]:
         return None, data, status
-    return data.get("data", {}).get("user"), data, status
+    
+    owner = data.get("data", {}).get("repositoryOwner")
+    return owner, data, status
   
   except requests.RequestException as e:
         # Return None with synthetic error payload
