@@ -97,6 +97,18 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_company ON users (company);
 CREATE INDEX IF NOT EXISTS idx_users_location ON users (location);
 
+CREATE TABLE IF NOT EXISTS organizations (
+  login                TEXT PRIMARY KEY,
+  name                 TEXT,
+  description          TEXT,
+  location             TEXT,
+  created_at           TIMESTAMPTZ,
+  repositories_count   INT,
+  members_count        INT,
+  status               TEXT DEFAULT 'pending'
+);
+CREATE INDEX IF NOT EXISTS idx_orgs_location ON organizations (location);
+
 -- Dead-letter table for failures
 CREATE TABLE IF NOT EXISTS dead_letters (
     id BIGSERIAL PRIMARY KEY,
@@ -116,6 +128,13 @@ INSERT INTO users (
    %s, %s, %s, %s, %s, %s, %s, %s,
    %s, %s, %s, %s, %s, 'pending'
 )
+ON CONFLICT (login) DO NOTHING
+RETURNING login;
+"""
+
+SQL_INSERT_ORG = """
+INSERT INTO organizations (login, name, description, location, created_at, repositories_count, members_count, status)
+VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending')
 ON CONFLICT (login) DO NOTHING
 RETURNING login;
 """
