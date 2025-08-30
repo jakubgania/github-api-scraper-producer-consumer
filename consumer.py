@@ -396,6 +396,30 @@ class DB:
       logger.exception("Failed to insert user %s: %s", user.get("login"), e)
       raise
 
+  def insert_organization(self, org: Dict[str, Any]) -> bool:
+    self.ensure_connection()
+    try:
+      with self.conn.cursor() as cur:
+        cur.execute(
+          SQL_INSERT_ORG,
+          (
+            org.get("login"),
+            org.get("name"),
+            org.get("description"),
+            org.get("location"),
+            org.get("createdAt"),
+            (org.get("repositories") or {}).get("totalCount"),
+            (org.get("membersWithRole") or {}).get("totalCount"),
+          ),
+        )
+        inserted = cur.fetchone() is not None
+      self.conn.commit()
+      return inserted
+    except Exception as e:
+      self.conn.rollback()
+      logger.exception("Failed to insert organization %s: %s", org.get("login"), e)
+      raise
+
   def record_dead_letter(
       self,
       username: str,
@@ -429,10 +453,9 @@ class DB:
           pass
 
 def process_username(db: DB, session: requests.Session, username: str) -> None:
-  user, raw, status = fetch_github_user(session, username)
+  owner, raw, status = fetch_github_user(session, username)
 
-  if user is None:
-    # Determine error type
+  if owner is None:
     error_type = "unknown"
     if isinstance(raw, dict):
       # GraphQL errors present
@@ -446,24 +469,42 @@ def process_username(db: DB, session: requests.Session, username: str) -> None:
         error_type = "not_found"
       elif status == 403:
         error_type = "forbidden_or_rate_limited"
+
     logger.warning("No data for user %s (status %s; %s)", username, status, error_type)
     db.record_dead_letter(username=username, error_type=error_type, http_status=status, error_detail=raw if isinstance(raw, dict) else {})
     return
   
-  # Insert user (UPSERT guards duplicates)
+  typename = owner.get("__typename")
+
   try:
-    inserted = db.insert_user(user)
-    if inserted:
-      logger.info("✅ Saved %s to DB", username)
+    if typename == "User":
+      inserted = db.insert_user(owner)
+      if inserted:
+        logger.info("✅ Saved %s to DB", username)
+      else:
+        logger.info("⚠️ User %s already in DB, skipped", username)
+    elif typename == "Organization":
+      inserted = db.insert_organization(owner)
+      if inserted:
+        logger.info("✅ Saved ORG %s to DB", username)
+      else:
+        logger.info("⚠️ Organization %s already in DB, skipped", username)
     else:
-      logger.info("⚠️ User %s already in DB, skipped", username)
+      logger.warning("Unexpected __typename for %s: %s", username, typename)
+      db.record_dead_letter(
+        username=username,
+        error_type=f"unexpected_typename_{typename}",
+        http_status=status,
+        error_detail={"owner": owner},
+      )
+      
   except Exception:
     # If DB insert fails, record as dead-letter for later reprocessing
     db.record_dead_letter(
       username=username,
       error_type="db_insert_failed",
       http_status=status,
-      error_detail={"user": user},
+      error_detail={"user": owner},
     )
 
 stop_flag = False
