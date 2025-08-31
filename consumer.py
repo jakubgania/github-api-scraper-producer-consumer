@@ -100,12 +100,14 @@ CREATE INDEX IF NOT EXISTS idx_users_location ON users (location);
 CREATE TABLE IF NOT EXISTS organizations (
   login                TEXT PRIMARY KEY,
   name                 TEXT,
+  email                TEXT,
   description          TEXT,
   location             TEXT,
   created_at           TIMESTAMPTZ,
   repositories_count   INT,
   members_count        INT,
-  status               TEXT DEFAULT 'pending'
+  twitter_username     TEXT,
+  website_url          TEXT,
 );
 CREATE INDEX IF NOT EXISTS idx_orgs_location ON organizations (location);
 
@@ -133,8 +135,8 @@ RETURNING login;
 """
 
 SQL_INSERT_ORG = """
-INSERT INTO organizations (login, name, description, location, created_at, repositories_count, members_count, status)
-VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending')
+INSERT INTO organizations (login, name, email, description, location, created_at, repositories_count, members_count, twitter_username, website_url)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (login) DO NOTHING
 RETURNING login;
 """
@@ -405,11 +407,14 @@ class DB:
           (
             org.get("login"),
             org.get("name"),
+            org.get("email"),
             org.get("description"),
             org.get("location"),
             org.get("createdAt"),
             (org.get("repositories") or {}).get("totalCount"),
             (org.get("membersWithRole") or {}).get("totalCount"),
+            org.get("twitterUsername"),
+            org.get("websiteUrl"),
           ),
         )
         inserted = cur.fetchone() is not None
