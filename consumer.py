@@ -252,12 +252,10 @@ query($username: String!) {
 """
 
 REPOSITORY_OWNER_QUERY = """
-query($login: String!) {
-  repositoryOwner(login: $login) {
+query($username: String!) {
+  repositoryOwner(login: $username) {
     __typename
     login
-    avatarUrl
-    createdAt
     repositories { totalCount }
     ... on User {
       name
@@ -270,6 +268,7 @@ query($login: String!) {
       websiteUrl
       email
       isHireable
+      createdAt
     }
     ... on Organization {
       name
@@ -313,7 +312,8 @@ def fetch_github_user(session: requests.Session, username: str) -> tuple[Optiona
     # logger.info(f"Rate Limit Reset: {response.headers.get('X-RateLimit-Reset')}")
 
     # Fetch and convert the reset timestamp
-    reset_timestamp = int(response.headers.get('X-RateLimit-Reset'), "0")
+    reset_header = response.headers.get('X-RateLimit-Reset')
+    reset_timestamp = int(reset_header) if reset_header is not None else 0
     current_time = int(time.time())  # current time in seconds since the epoch
     time_left = reset_timestamp - current_time  # Calculate the time left in seconds
     
