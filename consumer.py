@@ -277,6 +277,7 @@ query($username: String!) {
       description
       location
       email
+      createdAt
       twitterUsername
       websiteUrl
       membersWithRole { totalCount }
