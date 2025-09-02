@@ -66,8 +66,56 @@ class Settings:
 
 SETTINGS = Settings()
 
+# ----------------------------------------------------------------------------
+# LOGS
+# ----------------------------------------------------------------------------
+
+def setup_logging() -> None:
+  level = getattr(logging, SETTINGS.LOG_LEVEL.upper(), logging.INFO)
+  logging.basicConfig(
+    level=level,
+    format="%(asctime)sZ | %(levelname)-8s | %(message)s",
+  )
+
+  logging.Formatter.converter = time.gmtime
+
+logger = logging.getLogger(__name__)
+
+# ----------------------------------------------------------------------------
+# HELPERS
+# ----------------------------------------------------------------------------
+
+def format_duration(seconds: float) -> str:
+  if seconds < 60:
+    return f"{seconds:.2f}s"
+  if seconds < 3600:
+    m = seconds / 60
+    return f"{m:.2f}m"
+  h = seconds / 3600
+  return f"{h:.2f}h"
+
+def now_utc() -> datetime:
+  return datetime.now(timezone.utc)
+
+# ----------------------------------------------------------------------------
+# GITHUB — client + rate limiting with intervals between requests
+# ----------------------------------------------------------------------------
+
+class GitHubError(RuntimeError):
+  pass
+
+# ----------------------------------------------------------------------------
+# MAIN LOOP
+# ----------------------------------------------------------------------------
+
 def main():
+  setup_logging()
   print("start")
+
+  if not SETTINGS.GITHUB_TOKEN:
+    logger.error("GITHUB_API_TOKEN not set. Export and retry.")
+    logger.error("Set it e.g. `export GITHUB_API_TOKEN=your_token` and try again.")
+    sys.exit(1)
 
 if __name__ == "__main__":
   main()
