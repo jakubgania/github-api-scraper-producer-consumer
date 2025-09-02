@@ -104,6 +104,36 @@ def now_utc() -> datetime:
 class GitHubError(RuntimeError):
   pass
 
+class RateLimiter:
+  """" Maintains the minimum interval between requests and respects the limit reset """
+
+  def __init__(self, min_interval: float):
+    self.min_interval = max(0.0, float(min_interval))
+    self._last_request_ts: float | None = None
+  
+  def wait_before_request(self) -> None:
+    """  """
+    if self._last_request_ts is None:
+      return
+    elasped = time.time() - self._last_request_ts
+    remaining = self.min_interval - elasped
+    if remaining > 0:
+      time.sleep(remaining)
+
+  def mark_request_done(self) -> None:
+    self._last_request_ts = time.time()
+
+  def wait_until_reset_if_needed(self, remaining: Optional[int], reset_unix: Optional[int]) -> None:
+    if remaining is None or reset_unix is None:
+      return
+    if int(remaining) > 0:
+      return
+    sleep_for = max(0, int(reset_unix) - int(time.time())) + SETTINGS.RESET_SAFETY_MARGIN_SEC
+    if sleep_for > 0:
+      logger.warning("Rate limit exhausted. Sleeping until reset: %ss (at %s)", sleep_for, datetime.fromtimestamp(int(reset_unix)))
+      time.sleep(sleep_for)
+
+
 # ----------------------------------------------------------------------------
 # MAIN LOOP
 # ----------------------------------------------------------------------------
