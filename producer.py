@@ -24,6 +24,8 @@ import socket
 import sys
 import time
 
+import requests
+
 @dataclass
 class Settings:
   # Postgres
@@ -132,6 +134,91 @@ class RateLimiter:
     if sleep_for > 0:
       logger.warning("Rate limit exhausted. Sleeping until reset: %ss (at %s)", sleep_for, datetime.fromtimestamp(int(reset_unix)))
       time.sleep(sleep_for)
+
+class GitHubClient:
+  def __init__(self, token: str, graphql_url: str, timeout: float, rate_limiter: RateLimiter):
+    self.session = requests.Session()
+    self.session.headers.update({
+      "Authorization": f"Bearer {token}",
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "queue-feeder/1.0",
+    })
+    self.graphql_url = graphql_url
+    self.timeout = timeout
+    self.rate_limiter = rate_limiter
+
+  def graphql(self, query: str, variables: dict) -> dict:
+    """ Sends a GraphQL query, respecting spacing and limits. Returns JSON.
+        Throws GitHubError on HTTP/GraphQL errors."""
+    
+    self.rate_limiter.wait_before_request()
+
+    try:
+      resp = self.session.post(
+        self.graphql_url,
+        data=json.dumps({"query": query, "variables": variables}),
+        timeout=self.timeout,
+      )
+    except requests.RequestException as e:
+      raise GitHubError(f"Network error: {e}") from e
+    finally:
+      # mark the execution of the request regardless of success - we keep the distance
+      self.rate_limiter.mark_request_done()
+
+    # Read the limit headers and possibly wait for a reset
+    try:
+      remaining = int(resp.headers.get("X-RateLimit-Remaining", "1"))
+    except ValueError:
+      remaining = None
+    
+    try:
+      reset_unix = int(resp.headers.get("X-RateLimit-Reset", "0")) or None
+    except ValueError:
+      reset_unix = None
+
+    if resp.status_code == 401:
+      raise GitHubError("Unauthorized (401): invalid or expired token")
+
+    if resp.status_code == 403:
+      #403 may indicate a secondary rate limit - take a break to reset
+      self.rate_limiter.wait_until_reset_if_needed(remaining, reset_unix)
+      raise GitHubError("Forbidden (403): possibly secondary rate limit")
+    
+    if resp.status_code >= 400:
+      raise GitHubError(f"HTTP {resp.status_code}: {resp.text[:500]}")
+    
+    try:
+      payload = resp.json()
+    except ValueError as e:
+      raise GitHubError(f"Invalid JSON: {e}") from e
+    
+    if "errors" in payload and payload["errors"]:
+      msg = payload["errors"][0].get("message", "Unknow GraphQL error")
+      # If limits errors - wait
+      self.rate_limiter.wait_until_reset_if_needed(remaining, reset_unix)
+      raise GitHubError(f"GraphQL error: {msg}")
+    
+    # If you have reached your limits, please wait until the reset occurs before we refund your money.
+    self.rate_limiter.wait_until_reset_if_needed(remaining, reset_unix)
+    return payload
+  
+  def validate_token(self, ratelimit_url: str) -> None:
+    try:
+      r = self.session.get(ratelimit_url, timeout=SETTINGS.REQUEST_TIMEOUT_SECONDS)
+    except requests.RequestException as e:
+      raise GitHubError(f"Cannot reach GitHub API: {e}") from e
+    
+    if r.status_code == 401:
+      raise GitHubError("Invalid or expired GitHub token (401)")
+    
+    if r.status_code >= 400:
+      raise GitHubError(f"GitHub rate_limit error {r.status_code}: {r.text}")
+    
+    data = r.json()
+    rem = data.get("resources", {}).get("graphql", {}).get("remaining")
+    reset = data.get("resources", {}).get("graphql", {}).get("reset")
+    logger.info("GitHub token OK — remaining=%s, reset_unix=%s", rem, reset)
 
 
 # ----------------------------------------------------------------------------
