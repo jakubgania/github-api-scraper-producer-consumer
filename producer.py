@@ -355,7 +355,76 @@ class Queue:
     logger.info("Enqueued %s new logins. Queue size=%s", len(new_items), self.size())
     return len(new_items)
 
+# ----------------------------------------------------------------------------
+# GRAPHQL
+# ----------------------------------------------------------------------------
 
+
+QUERY = """
+query($username: String!) {
+  user(login: $username) {
+    login
+    name
+    organizations(first: 100) {
+      nodes { name login }
+    }
+    followers(first: 100) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        name
+        login
+        followers { totalCount }
+        following { totalCount }
+      }
+      totalCount
+    }
+    following(first: 100) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        name
+        login
+        followers { totalCount }
+        following { totalCount }
+      }
+      totalCount
+    }
+  }
+}
+"""
+
+PAGINATION_QUERY_FOLLOWERS = """
+query($username: String!, $cursor: String!) {
+  user(login: $username) {
+    followers(first: 100, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        name
+        login
+        followers { totalCount }
+        following { totalCount }
+      }
+      totalCount
+    }
+  }
+}
+"""
+
+PAGINATION_QUERY_FOLLOWING = """
+query($username: String!, $cursor: String!) {
+  user(login: $username) {
+    following(first: 100, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        name
+        login
+        followers { totalCount }
+        following { totalCount }
+      }
+      totalCount
+    }
+  }
+}
+"""
 
 # ----------------------------------------------------------------------------
 # MAIN LOOP
