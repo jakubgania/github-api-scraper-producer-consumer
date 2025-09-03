@@ -24,6 +24,8 @@ import socket
 import sys
 import time
 
+import psycopg
+import redis
 import requests
 
 @dataclass
@@ -223,6 +225,83 @@ class GitHubClient:
 # ----------------------------------------------------------------------------
 # SQL — Progress
 # ----------------------------------------------------------------------------
+
+CREATE_POSTGRES_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS scraper_progress (
+  id INT PRIMARY KEY,
+  current_login TEXT,
+  current_mode TEXT,
+  current_cursor TEXT,
+  last_update TIMESTAMPTZ DEFAULT NOW()
+);
+"""
+
+def ensure_progress_table():
+  with psycopg.connect(SETTINGS.POSTGRES_DSN) as conn:
+    with conn.cursor() as cur:
+      cur.execute(CREATE_POSTGRES_TABLE_SQL)
+      conn.commit()
+
+def save_progress(login: Optional[str], mode: Optional[str], cursor: Optional[str]) -> None:
+  """ Saves (overwrites) the only progress record with id=1 """
+  with psycopg.connect(SETTINGS.POSTGRES_DSN) as conn:
+    with conn.cursor() as cur:
+      cur.execute(
+        """
+        INSERT INTO scraper_progress (id, current_login, current_mode, current_cursor, last_update)
+        VALUES (1, %s, %s, %s, NOW())
+        ON CONFLICT (id) DO UPDATE
+        SET current_login = EXCLUDED.current_login,
+        current_mode = EXCLUDED.current_mode,
+        current_cursor = EXCLUDED.current_cursor,
+        last_update = NOW();
+        """,
+        (login, mode, cursor),
+      )
+      conn.commit()
+
+def load_progress() -> Optional[tuple[str, Optional[str], Optional[str]]]:
+  """ Returns (login, mode, cursor) or None if missing """
+  with psycopg.connect(SETTINGS.POSTGRES_DSN) as conn:
+    with conn.cursor() as cur:
+      cur.execute(
+        "SELECT current_login, current_mode, current_cursor FROM scraper_progress WHERE id = 1;"
+      )
+      row = cur.fetchone()
+      if row and row[0]:
+        return row[0], row[1], row[2]
+      return None
+    
+def claim_pending_user() -> Optional[str]:
+  """ Takes the oldest `pending` and marks it as `in_progress` atomically. Returns login or None if none """
+  with psycopg.connect(SETTINGS.POSTGRES_DSN) as conn:
+    conn.execute("BEGIN")
+    with conn.cursor() as cur:
+      cur.execute(
+        """
+        SELECT login FROM users
+        WHERE status = 'pending'
+        ORDER BY created_at ASC
+        FOR UPDATE SKIP LOCKED
+        LIMIT 1;
+        """
+      )
+      row = cur.fetchone()
+      if not row:
+        conn.commit()
+        return None
+      login = row[0]
+      cur.execute("UPDATE users SET status = 'in_progress' WHERE login = %s;", (login,))
+      conn.commit()
+      return login
+    
+def mark_user_status(login: str, status: str) -> None:
+  if status not in {"pending", "in_progress", "done", "failed"}:
+    raise ValueError("Invalid status")
+  with psycopg.connect(SETTINGS.POSTGRES_DSN) as conn:
+    with conn.cursor() as cur:
+      cur.execute("UPDATE users SET status = %s WHERE login = %s;", (status, login))
+      conn.commit()
 
 # ----------------------------------------------------------------------------
 # MAIN LOOP
