@@ -427,6 +427,32 @@ query($username: String!, $cursor: String!) {
 """
 
 # ----------------------------------------------------------------------------
+# HEALTH CHECK OF SERVICES
+# ----------------------------------------------------------------------------
+
+def wait_for_service(name: str, host: str, port: int, max_total_wait: int = 60) -> bool:
+  """ Waits until the port starts responding (up to max_total_wait seconds) """
+  start = time.time()
+  attempt = 0
+  while (time.time() - start) < max_total_wait:
+    attempt += 1
+    try:
+      with socket.create_connection((host, port), timeout=2):
+        logger.info("Service %s at %s:%s is up", name, host, port)
+        return True
+    except (socket.timeout, ConnectionRefusedError, OSError):
+      logger.info("Waiting for %s (%s:%s)... attempt %s", name, host, port, attempt)
+      time.sleep(2)
+  logger.error("Service %s at %s:%s not available after %ss", name, host, port, max_total_wait)
+  return False
+
+def check_services() -> None:
+  if not SETTINGS.CHECK_SERVICES:
+    return
+  for name, host, port in SETTINGS.SERVICES:
+    wait_for_service(name, host, port)
+
+# ----------------------------------------------------------------------------
 # MAIN LOOP
 # ----------------------------------------------------------------------------
 
