@@ -304,6 +304,60 @@ def mark_user_status(login: str, status: str) -> None:
       conn.commit()
 
 # ----------------------------------------------------------------------------
+# REDIS — queue and deduplication
+# ----------------------------------------------------------------------------
+
+class Queue:
+  def __init__(self, client: redis.Redis, list_name: str, seen_set: str):
+    self.client = client
+    self.list_name = list_name
+    self.seen_set = seen_set
+
+  def size(self) -> int:
+    return int(self.client.llen(self.list_name))
+  
+  def _wait_for_space(self, batch_len: int) -> None:
+    """ Waits until the queue drops below the threshold to push the batch without overflow """
+    while True:
+      qsize = self.size()
+      if qsize + batch_len <= SETTINGS.MAX_QUEUE_SIZE:
+        return
+      
+      # If too high, wait until it drops below the unlock level
+      if qsize <= SETTINGS.ENQUEUE_BLOCK_UNTIL_BELOW:
+        return
+      
+      logger.info("Queue=%s too big (>%s). Waiting...", qsize, SETTINGS.MAX_QUEUE_SIZE)
+      time.sleep(2)
+
+  def enqueue_unique(self, logins: Iterable[str]) -> int:
+    """ Adds only new logins to the queue (based on Redis SET). Returns how many were added """
+    normed = [l.strip().lower() for l in logins if l and l.strip()]
+    if not normed:
+      return 0
+    
+    # Add to SET and check which are new (SADD returns the number of new ones; but we want a list)
+    new_items = []
+    pipe = self.client.pipeline()
+    for l in normed:
+      pipe.sadd(self.seen_set, l)
+
+    sadd_results = pipe.execute()
+    for l, added in zip(normed, sadd_results):
+      if int(added) == 1:
+        new_items.append(1)
+
+    if not new_items:
+      return 0
+    
+    self._wait_for_space(len(new_items))
+    self.client.rpush(self.list_name, *new_items)
+    logger.info("Enqueued %s new logins. Queue size=%s", len(new_items), self.size())
+    return len(new_items)
+
+
+
+# ----------------------------------------------------------------------------
 # MAIN LOOP
 # ----------------------------------------------------------------------------
 
