@@ -453,6 +453,32 @@ def check_services() -> None:
     wait_for_service(name, host, port)
 
 # ----------------------------------------------------------------------------
+# Logic processing — shared functions
+# ----------------------------------------------------------------------------
+
+def filter_candidate(login: Optional[str], followers_count: int, following_count: int, owner_login: str) -> bool:
+  if not login:
+    return False
+  l = login.strip().lower()
+  if not l:
+    return False
+  if l == owner_login.strip().lower():
+    return False # don't throw yourself in
+  return (followers_count > 0) or (following_count > 0)
+
+
+def consume_and_enqueue_nodes(nodes: list[dict], owner_login: str, q: Queue) -> int:
+  batch = []
+  for node in nodes or []:
+    node_login = node.get("login")
+    f1 = int(node.get("followers", {}).get("totalCount", 0) or 0)
+    f2 = int(node.get("following", {}).get("totalCount", 0) or 0)
+    if filter_candidate(node_login, f1, f2, owner_login):
+      batch.append(node_login)
+  added = q.enqueue_unique(batch)
+  return added
+
+# ----------------------------------------------------------------------------
 # MAIN LOOP
 # ----------------------------------------------------------------------------
 
@@ -464,6 +490,43 @@ def main():
     logger.error("GITHUB_API_TOKEN not set. Export and retry.")
     logger.error("Set it e.g. `export GITHUB_API_TOKEN=your_token` and try again.")
     sys.exit(1)
+
+  # Health-check
+  check_services()
+
+  # Prepare progress
+  ensure_progress_table()
+
+  redis_client = redis.Redis(
+    host=SETTINGS.REDIS_HOST,
+    port=SETTINGS.REDIS_PORT,
+    db=SETTINGS.REDIS_DB,
+    decode_responses=True,
+  )
+  queue = Queue(redis_client, SETTINGS.QUEUE_NAME, SETTINGS.SEEN_SET)
+
+  # GitHub client
+  limiter = RateLimiter(SETTINGS.MIN_SECONDS_BETWEEN_REQUESTS)
+  gh = GitHubClient(
+    token=SETTINGS.GITHUB_TOKEN,
+    graphql_url=SETTINGS.GITHUB_GRAPHQL_URL,
+    timeout=SETTINGS.REQUEST_TIMEOUT_SECONDS,
+    rate_limiter=limiter,
+  )
+
+  # Token verification and reading limits
+  try:
+    gh.validate_token(SETTINGS.GITHUB_RATELIMIT_URL)
+  except GitHubError as e:
+    logger.error("Token validation failed: %s", e)
+    sys.exit(1)
+
+  start_all = time.time()
+  logger.info("Worker started. Queue size=%s", queue.size())
+
+# ----------------------------------------------------------------------------
+# ENTRYPOINT
+# ----------------------------------------------------------------------------
 
 if __name__ == "__main__":
   main()
