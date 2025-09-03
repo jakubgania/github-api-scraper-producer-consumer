@@ -220,6 +220,9 @@ class GitHubClient:
     reset = data.get("resources", {}).get("graphql", {}).get("reset")
     logger.info("GitHub token OK — remaining=%s, reset_unix=%s", rem, reset)
 
+# ----------------------------------------------------------------------------
+# SQL — Progress
+# ----------------------------------------------------------------------------
 
 # ----------------------------------------------------------------------------
 # MAIN LOOP
