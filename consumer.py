@@ -42,6 +42,8 @@ from urllib3.util import Retry
 
 # -------------------- Configuration --------------------
 
+CONTAINER_ID = os.getenv("CONTAINER_ID", "unknown-container")
+
 POSTGRES_DSN = os.getenv(
     "POSTGRES_DSN", "postgresql://postgres:postgres@localhost:5432/postgres"
 )
@@ -517,6 +519,7 @@ stop_flag = False
 
 def consumer() -> None:
   logger.info("✅ Starting GitHub consumer...")
+  logger.info("✅ CONTAINER ID ", CONTAINER_ID)
 
   wait_for_postgres(POSTGRES_DSN, POSTGRES_WAIT_MAX_S)
   init_db(POSTGRES_DSN)
@@ -529,6 +532,11 @@ def consumer() -> None:
 
   processed = 0
   started = time.time()
+
+  redis_client.hmset(f"worker:{CONTAINER_ID}", {
+    "container_id": CONTAINER_ID,
+    "start_time": started,
+  })
 
   try:
     while not stop_flag:
