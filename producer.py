@@ -46,7 +46,7 @@ class Settings:
   GITHUB_GRAPHQL_URL: str = os.getenv("GITHUB_API_ENDPOINT", "https://api.github.com/graphql")
   GITHUB_RATELIMIT_URL: str = os.getenv("GITHUB_RATE_LIMIT_ENDPOINT", "https://api.github.com/rate_limit")
 
-  MIN_SECONDS_BETWEEN_REQUESTS: float = float(os.getenv("MIN_SECONDS_BETWEEN_REQUESTS", "1.9"))
+  MIN_SECONDS_BETWEEN_REQUESTS: float = float(os.getenv("MIN_SECONDS_BETWEEN_REQUESTS", "0.8"))
   REQUEST_TIMEOUT_SECONDS: float = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "10"))
   RESET_SAFETY_MARGIN_SEC: int = int(os.getenv("RESET_SAFETY_MARGIN_SEC", "2"))
 
@@ -354,6 +354,40 @@ class Queue:
     self.client.rpush(self.list_name, *new_items)
     logger.info("Enqueued %s new logins. Queue size=%s", len(new_items), self.size())
     return len(new_items)
+  
+  def enqueue(self, logins: list[str]) -> int:
+    """ It uploads *only* logins as LIST elements—no SETs/streams.
+    With deduplication *within the batch* (local), as in your original.
+    """
+    # local deduplication (batch only)
+    unique = []
+    seen = set()
+    for l in logins:
+      if not l:
+        continue
+      l2 = l.strip()
+      if not l2:
+        continue
+      if l2 in seen:
+        continue
+      seen.add(l2)
+      unique.append(l2)
+
+    if not unique:
+      return 0
+
+    # simple backpressure - we wait if the queue is too long
+    while True:
+      qsize = self.size()
+      if qsize < SETTINGS.MAX_QUEUE_SIZE:
+        break
+      logger.info("Queue too big (size=%s >= %s). Waiting until <= %s...", qsize, SETTINGS.MAX_QUEUE_SIZE, SETTINGS.ENQUEUE_BLOCK_UNTIL_BELOW)
+      while self.size() > SETTINGS.ENQUEUE_BLOCK_UNTIL_BELOW:
+        time.sleep(2)
+
+    self.client.rpush(self.list_name, *unique)
+    logger.info("Enqueued %s logins. Queue size=%s", len(unique), self.size())
+    return len(unique)
 
 # ----------------------------------------------------------------------------
 # GRAPHQL
@@ -475,8 +509,114 @@ def consume_and_enqueue_nodes(nodes: list[dict], owner_login: str, q: Queue) -> 
     f2 = int(node.get("following", {}).get("totalCount", 0) or 0)
     if filter_candidate(node_login, f1, f2, owner_login):
       batch.append(node_login)
-  added = q.enqueue_unique(batch)
+  # added = q.enqueue_unique(batch)
+  added = q.enqueue(batch)
   return added
+
+# ----------------------------------------------------------------------------
+# WORKER — single-user processing (with pagination + checkpoints)
+# ----------------------------------------------------------------------------
+
+def process_user(username: str, gh: GitHubClient, q: Queue) -> None:
+  start = time.time()
+  logger.info("Processing user=%s", username)
+
+  #1 first page (both collections)
+  payload = gh.graphql(QUERY, {"username": username})
+  user = payload.get("data", {}).get("user")
+  if not user:
+    logger.warning("User %s not found on GitHub. Marking done.", username)
+    return
+  
+  # Organizations - we only log how many, it's an auxiliary metric
+  org_nodes = (user.get("organizations") or {}).get("nodes") or []
+  logger.info("User %s organizations=%s", username, len(org_nodes))
+
+  # FOLLOWERS — first page
+  followers = user.get("followers") or {}
+  added_f = consume_and_enqueue_nodes(followers.get("nodes") or [], username, q)
+  logger.info("Followers first-page enqueued=%s / total=%s", added_f, followers.get("totalCount"))
+
+  # FOLLOWING — first page
+  following = user.get("following") or {}
+  added_g = consume_and_enqueue_nodes(following.get("nodes") or [], username, q)
+  logger.info("Following first-page enqueued=%s / total=%s", added_g, following.get("totalCount"))
+
+  # FOLLOWERS — pagination
+  if (followers.get("pageInfo") or {}).get("hasNextPage"):
+    cursor = (followers.get("pageInfo") or {}).get("endCursor")
+    _paginate_collection(
+      owner=username,
+      collection_name="followers",
+      query=PAGINATION_QUERY_FOLLOWERS,
+      cursor=cursor,
+      gh=gh,
+      q=q,
+    )
+
+  # FOLLOWING — pagination
+  if (following.get("pageInfo") or {}).get("hasNextPage"):
+    cursor = (following.get("pageInfo") or {}).get("endCursor")
+    _paginate_collection(
+      owner=username,
+      collection_name="following",
+      query=PAGINATION_QUERY_FOLLOWING,
+      cursor=cursor,
+      gh=gh,
+      q=q,
+  )
+    
+  logger.info("Done user=%s in %s", username, format_duration(time.time() - start))
+
+def _paginate_collection(owner: str, collection_name: str, query: str, cursor: Optional[str], gh: GitHubClient, q: Queue) -> None:
+  """ Iterates through the pages of a given collection (followers/following) while saving progress
+  - After each page, it saves `scraper_progress` = (owner, collection_name, cursor)
+  - If a restart occurs, `resume_if_needed()` will resume from that point
+  """
+
+  has_next = True
+  page = 0
+  while has_next and cursor:
+    page += 1
+    save_progress(owner, collection_name, cursor)
+    payload = gh.graphql(query, {"username": owner, "cursor": cursor})
+    user = payload.get("data", {}).get("user") or {}
+    data = user.get(collection_name) or {}
+
+    added = consume_and_enqueue_nodes(data.get("nodes") or [], owner, q)
+    page_info = data.get("pageInfo") or {}
+    has_next = bool(page_info.get("hasNextPage"))
+    cursor = page_info.get("endCursor")
+
+    logger.info("Paginated %s page=%s enqueued=%s has_next=%s", collection_name, page, added, has_next)
+
+  # End — clear progress (collection completed
+  save_progress(owner, None, None)
+
+# ----------------------------------------------------------------------------
+# RESUME — kontynuacja po restarcie
+# ----------------------------------------------------------------------------
+
+def resume_if_needed(gh: GitHubClient, q: Queue) -> bool:
+  """ If a state is saved in scraper_progress — it will resume pagination and return True
+  Otherwise, it will return False.
+  """
+  state = load_progress()
+  if not state:
+    return False
+  login, mode, cursor = state
+  if not (login and mode and cursor):
+    return False
+
+  logger.warning("Resuming pagination after restart: user=%s mode=%s", login, mode)
+  if mode not in ("followers", "following"):
+    logger.error("Invalid mode in progress table: %s", mode)
+    return False
+
+  # Resume the appropriate collection from the current cursor
+  query = PAGINATION_QUERY_FOLLOWERS if mode == "followers" else PAGINATION_QUERY_FOLLOWING
+  _paginate_collection(owner=login, collection_name=mode, query=query, cursor=cursor, gh=gh, q=q)
+  return True
 
 # ----------------------------------------------------------------------------
 # MAIN LOOP
@@ -523,6 +663,55 @@ def main():
 
   start_all = time.time()
   logger.info("Worker started. Queue size=%s", queue.size())
+
+  # First, try resuming the interrupted pagination
+  resumed = False
+  try:
+    resumed = resume_if_needed(gh, queue)
+  except GitHubError as e:
+    logger.error("Resume failed: %s", e)
+
+  if resumed:
+    logger.info("Resume completed. Queue size=%s", queue.size())
+    
+  # Main loop: get pending from DB and process
+  while True:
+    try:
+      username = claim_pending_user()
+      if not username:
+        # No waiting - use initial on first run or sleep
+        if queue.size() == 0 and not resumed:
+          username = SETTINGS.INITIAL_PROFILE_LOGIN
+          logger.warning("No pending users in DB. Using INITIAL_PROFILE_LOGIN=%s", username)
+        else:
+          time.sleep(3)
+          continue
+
+      # Clear any old progress (just in case)
+      save_progress(None, None, None)
+
+      try:
+        process_user(username, gh, queue)
+        mark_user_status(username, "done")
+      except GitHubError as e:
+        logger.error("GitHub error for user=%s: %s", username, e)
+        mark_user_status(username, "failed")
+      except Exception as e:
+        logger.exception("Unexpected error for user=%s: %s", username, e)
+        mark_user_status(username, "failed")
+      finally:
+        save_progress(None, None, None)
+    
+    except KeyboardInterrupt:
+      logger.info("Interrupted by user. Exiting...")
+      break
+    except Exception as e: # noqa: BLE001
+      # Overriding error - don't interrupt the script, sleep and continue
+      logger.exception("Fatal loop error: %s", e)
+      time.sleep(5)
+  
+  elapsed = time.time() - start_all
+  logger.info("Total runtime: %s", format_duration(elapsed))
 
 # ----------------------------------------------------------------------------
 # ENTRYPOINT
