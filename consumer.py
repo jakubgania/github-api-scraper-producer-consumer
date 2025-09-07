@@ -52,11 +52,13 @@ REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_DB = int(os.getenv("REDIS_DB", "0"))
 QUEUE_NAME = os.getenv("REDIS_QUEUE_NAME", "github_logins_queue")
+REQUEST_COUNTER_KEY = os.getenv("REQUEST_COUNTER_KEY", "github_requests_total")
 
 GITHUB_API_ENDPOINT = "https://api.github.com/graphql"
 GITHUB_API_TOKEN = os.environ.get("GITHUB_API_TOKEN")
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+LOG_PROGRESS_EVERY = int(os.getenv("LOG_PROGRESS_EVERY", "100"))
 
 HTTP_CONNECT_TIMEOUT_S = float(os.getenv("HTTP_CONNECT_TIMEOUT_S", "3"))
 HTTP_READ_TIMEOUT_S = float(os.getenv("HTTP_READ_TIMEOUT_S", "10"))
@@ -109,7 +111,7 @@ CREATE TABLE IF NOT EXISTS organizations (
   repositories_count   INT,
   members_count        INT,
   twitter_username     TEXT,
-  website_url          TEXT,
+  website_url          TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_orgs_location ON organizations (location);
 
@@ -302,7 +304,7 @@ def _respect_rate_limit(resp: requests.Response) -> None:
     # Be conservative if headers are missing/malformed
     pass
 
-def fetch_github_user(session: requests.Session, username: str) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], int]:
+def fetch_github_user(session: requests.Session, username: str, redis_client: redis.Redis) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], int]:
   payload = {"query": REPOSITORY_OWNER_QUERY, "variables": {"username": username}}
   try:
     response = session.post(
@@ -310,10 +312,16 @@ def fetch_github_user(session: requests.Session, username: str) -> tuple[Optiona
       json=payload,
       timeout=(HTTP_CONNECT_TIMEOUT_S, HTTP_READ_TIMEOUT_S),
     )
+
+    try:
+      redis_client.incr(REQUEST_COUNTER_KEY)
+    except Exception as e:
+      logger.warning("Could not increment Redis counter: %s", e)
+
     status = response.status_code
 
      # Log rate limit headers
-    logger.info(f"Rate Limit Remaining: {response.headers.get('X-RateLimit-Remaining')}")
+    # logger.info(f"Rate Limit Remaining: {response.headers.get('X-RateLimit-Remaining')}")
     # logger.info(f"Rate Limit Reset: {response.headers.get('X-RateLimit-Reset')}")
 
     # Fetch and convert the reset timestamp
@@ -326,7 +334,7 @@ def fetch_github_user(session: requests.Session, username: str) -> tuple[Optiona
     minutes_left = time_left // 60
     seconds_left = time_left % 60
     
-    logger.info(f"Rate Limit Reset: {minutes_left} minutes, {seconds_left} seconds remaining")
+    # logger.info(f"Rate Limit Reset: {minutes_left} minutes, {seconds_left} seconds remaining")
 
     # Respect rate limit based on headers
     _respect_rate_limit(response)
@@ -460,8 +468,8 @@ class DB:
         except Exception:
           pass
 
-def process_username(db: DB, session: requests.Session, username: str) -> None:
-  owner, raw, status = fetch_github_user(session, username)
+def process_username(db: DB, session: requests.Session, username: str, redis_client: redis.Redis) -> None:
+  owner, raw, status = fetch_github_user(session, username, redis_client)
 
   if owner is None:
     error_type = "unknown"
@@ -487,16 +495,18 @@ def process_username(db: DB, session: requests.Session, username: str) -> None:
   try:
     if typename == "User":
       inserted = db.insert_user(owner)
-      if inserted:
-        logger.info("✅ Saved %s to DB", username)
-      else:
-        logger.info("⚠️ User %s already in DB, skipped", username)
+      return "inserted" if inserted else "skipped"
+      # if inserted:
+      #   logger.info("✅ Saved %s to DB", username)
+      # else:
+      #   logger.info("⚠️ User %s already in DB, skipped", username)
     elif typename == "Organization":
       inserted = db.insert_organization(owner)
-      if inserted:
-        logger.info("✅ Saved ORG %s to DB", username)
-      else:
-        logger.info("⚠️ Organization %s already in DB, skipped", username)
+      return "inserted" if inserted else "skipped"
+      # if inserted:
+      #   logger.info("✅ Saved ORG %s to DB", username)
+      # else:
+      #   logger.info("⚠️ Organization %s already in DB, skipped", username)
     else:
       logger.warning("Unexpected __typename for %s: %s", username, typename)
       db.record_dead_letter(
@@ -519,7 +529,7 @@ stop_flag = False
 
 def consumer() -> None:
   logger.info("✅ Starting GitHub consumer...")
-  logger.info("✅ CONTAINER ID ", CONTAINER_ID)
+  logger.info(f"✅ CONTAINER ID {CONTAINER_ID}")
 
   wait_for_postgres(POSTGRES_DSN, POSTGRES_WAIT_MAX_S)
   init_db(POSTGRES_DSN)
@@ -533,10 +543,17 @@ def consumer() -> None:
   processed = 0
   started = time.time()
 
-  redis_client.hmset(f"worker:{CONTAINER_ID}", {
-    "container_id": CONTAINER_ID,
-    "start_time": started,
-  })
+  redis_client.hset(
+    f"worker:{CONTAINER_ID}",
+    mapping={
+        "container_id": CONTAINER_ID,
+        "start_time": started,
+    }
+  )
+
+  inserted_count = 0
+  skipped_count = 0
+  processed = 0
 
   try:
     while not stop_flag:
@@ -553,26 +570,36 @@ def consumer() -> None:
 
       _, username = result
       now = datetime.now(timezone.utc).strftime("%H:%M:%S")
-      logger.info("[%s] 📡 Got login from Redis: %s", now, username)
+      # logger.info("[%s] 📡 Got login from Redis: %s", now, username)
 
       # Process one username
       try:
-          process_username(db, session, username)
+          result = process_username(db, session, username, redis_client)
+          if result == "inserted":
+            inserted_count += 1
+          elif result == "skipped":
+            skipped_count += 1
+          else:
+            dead_count += 1
+
           processed += 1
+
+          if processed % LOG_PROGRESS_EVERY == 0:
+            logger.info("✅ Added: %d - ⚠️ Skipped: %d - 📡 Processed: %d", inserted_count, skipped_count, processed)
       except Exception:
-          # process_username already logs and dead-letters; still continue
-          pass
+        # process_username already logs and dead-letters; still continue
+        pass
 
       # Simple adaptive throttle based on remaining rate limit header is inside fetch; here a small pause
       # 3600 / 0.8 = 4500 
       # 4500 from 5000 = 90%
-      time.sleep(0.8)
+      # time.sleep(0.8)
 
       # 3600 / 0.75 = 4800
       # 4800 from 5000 = 96%
       # time.sleep(0.75)
 
-      print(" ")
+      time.sleep(0.6)
   
   finally:
     elapsed = time.time() - started
