@@ -53,8 +53,9 @@ class Settings:
   # Queue and deduplication
   QUEUE_NAME: str = os.getenv("QUEUE_NAME", "github_logins_queue")
   SEEN_SET: str = os.getenv("SEEN_SET", "github_seen_logins")
-  MAX_QUEUE_SIZE: int = int(os.getenv("MAX_QUEUE_SIZE", "8000"))
+  MAX_QUEUE_SIZE: int = int(os.getenv("MAX_QUEUE_SIZE", "5000"))
   ENQUEUE_BLOCK_UNTIL_BELOW: int = int(os.getenv("ENQUEUE_BLOCK_UNTIL_BELOW", "40"))
+  REQUEST_COUNTER_KEY: str = os.getenv("REQUEST_COUNTER_KEY", "github_requests_total")
 
   # Start login if no pending in DB
   INITIAL_PROFILE_LOGIN: str = os.getenv("INITIAL_PROFILE_LOGIN", "jakubgania")
@@ -138,7 +139,7 @@ class RateLimiter:
       time.sleep(sleep_for)
 
 class GitHubClient:
-  def __init__(self, token: str, graphql_url: str, timeout: float, rate_limiter: RateLimiter):
+  def __init__(self, token: str, graphql_url: str, timeout: float, rate_limiter: RateLimiter, redis_client: redis.Redis):
     self.session = requests.Session()
     self.session.headers.update({
       "Authorization": f"Bearer {token}",
@@ -149,6 +150,7 @@ class GitHubClient:
     self.graphql_url = graphql_url
     self.timeout = timeout
     self.rate_limiter = rate_limiter
+    self.redis = redis_client
 
   def graphql(self, query: str, variables: dict) -> dict:
     """ Sends a GraphQL query, respecting spacing and limits. Returns JSON.
@@ -167,6 +169,11 @@ class GitHubClient:
     finally:
       # mark the execution of the request regardless of success - we keep the distance
       self.rate_limiter.mark_request_done()
+
+      try:
+        self.redis.incr(SETTINGS.REQUEST_COUNTER_KEY)
+      except Exception as e:
+        logger.warning("Could not increment Redis counter: %s", e)
 
     # Read the limit headers and possibly wait for a reset
     try:
@@ -652,6 +659,7 @@ def main():
     graphql_url=SETTINGS.GITHUB_GRAPHQL_URL,
     timeout=SETTINGS.REQUEST_TIMEOUT_SECONDS,
     rate_limiter=limiter,
+    redis_client=redis_client,
   )
 
   # Token verification and reading limits
