@@ -1,16 +1,38 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 import time
+import os
 
-# import redis
+import redis
 
-# redis_client = redis.Redis(host='localhost', port=6379, db=0)
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+REDIS_DB = int(os.getenv("REDIS_DB", "0"))
+REQUEST_COUNTER_KEY = os.getenv("REQUEST_COUNTER_KEY", "github_requests_total")
 
-def run_task():
-  print(">>> Trigger at", datetime.now().strftime("%H:%M:%S"))
+redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
+
+# step 1 - get data from redis
+# step 2 - send data to cloud
+
+def run_task1():
+  print(">>>1 task - trigger at", datetime.now().strftime("%H:%M:%S"))
+
+def run_task2():
+  print(">>>2 task - trigger at", datetime.now().strftime("%H:%M:%S"))
+
+def run_task3():
+  try:
+    count = redis_client.get(REQUEST_COUNTER_KEY) or 0
+    print(f">>>data from redis - {datetime.now().strftime('%H:%M:%S')} | total GitHub requests = {count}")
+    # here you can add e.g. sending to the cloud
+  except Exception as e:
+    print(f"Redis error: {e}")
 
 scheduler = BackgroundScheduler()
-scheduler.add_job(run_task, 'cron', second=0)
+scheduler.add_job(run_task1, 'cron', second=0, id="task1")
+# scheduler.add_job(run_task2, 'cron', second=0, id="task2")
+scheduler.add_job(run_task3, 'cron', second=0, id="task3")
 scheduler.start()
 
 print("Scheduler started...")
