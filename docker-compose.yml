@@ -14,6 +14,20 @@ services:
     networks:
       - api-github-scraper
 
+  analytics_postgres:
+    image: postgres:15
+    container_name: analytics_postgres
+    environment:
+      POSTGRES_USER: analytics
+      POSTGRES_PASSWORD: analytics
+      POSTGRES_DB: analytics
+    ports:
+      - "5433:5432"
+    volumes:
+      - analytics_postgres_data:/var/lib/postgresql/data
+    networks:
+      - api-github-scraper
+
   redis:
     image: redis
     container_name: redis-container
