@@ -604,6 +604,12 @@ def consumer() -> None:
   finally:
     elapsed = time.time() - started
     logger.info("Shutting down. Processed=%s Elapsed=%.1fs", processed, elapsed)
+    
+    try:
+      redis_client.delete(f"worker:{CONTAINER_ID}")
+    except Exception as e:
+      logger.error("Failed to remove worker key: %s", e)
+
     try:
       db.close()
     except Exception:
