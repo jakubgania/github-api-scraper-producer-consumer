@@ -24,7 +24,31 @@ def run_task2():
 def run_task3():
   try:
     count = redis_client.get(REQUEST_COUNTER_KEY) or 0
+
+    worker_keys = redis_client.keys("worker:*")
+    workers = []
+    for key in worker_keys:
+      data = redis_client.hgetall(key)
+      workers.append(data)
+
     print(f">>>data from redis - {datetime.now().strftime('%H:%M:%S')} | total GitHub requests = {count}")
+
+    print(f"   active workers = {len(workers)}")
+    for w in workers:
+      raw_ts = w.get('start_time')
+      if raw_ts:
+        try:
+          ts = float(raw_ts)
+          formatted = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+          formatted = raw_ts
+      else:
+        formatted = "N/A"
+
+      print(f"      - id={w.get('container_id')} start_time={formatted}")
+
+    print(" ")
+
     # here you can add e.g. sending to the cloud
   except Exception as e:
     print(f"Redis error: {e}")
