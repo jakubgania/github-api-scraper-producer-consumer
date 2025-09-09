@@ -48,6 +48,7 @@ services:
 
 volumes:
   postgres_data:
+  analytics_postgres_data:
 
 networks:
   api-github-scraper:
