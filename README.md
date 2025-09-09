@@ -20,6 +20,10 @@ docker-compose up -d
 ```
 
 ```bash
+docker-compose down -v
+```
+
+```bash
 docker run \
 --name github-app-1 \
 --label type=worker \
