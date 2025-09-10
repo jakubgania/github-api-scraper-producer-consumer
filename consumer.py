@@ -53,6 +53,7 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_DB = int(os.getenv("REDIS_DB", "0"))
 QUEUE_NAME = os.getenv("REDIS_QUEUE_NAME", "github_logins_queue")
 REQUEST_COUNTER_KEY = os.getenv("REQUEST_COUNTER_KEY", "github_requests_total")
+MINUTE_REQUEST_COUNTER_KEY: str = os.getenv("MINUTE_REQUEST_COUNTER_KEY", "minute_requests_counter")
 
 GITHUB_API_ENDPOINT = "https://api.github.com/graphql"
 GITHUB_API_TOKEN = os.environ.get("GITHUB_API_TOKEN")
@@ -315,6 +316,10 @@ def fetch_github_user(session: requests.Session, username: str, redis_client: re
 
     try:
       redis_client.incr(REQUEST_COUNTER_KEY)
+
+      minute_key = f"{MINUTE_REQUEST_COUNTER_KEY}:{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}"
+      redis_client.incr(minute_key)
+      redis_client.expire(minute_key, 120) # TTL = 120 seconds
     except Exception as e:
       logger.warning("Could not increment Redis counter: %s", e)
 
