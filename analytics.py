@@ -40,6 +40,13 @@ ON CONFLICT (minute) DO NOTHING
 RETURNING minute;
 """
 
+CREATE_WORKERS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS workers_state (
+  container_id TEXT PRIMARY KEY,
+  start_time TIMESTAMPTZ
+);
+"""
+
 def get_pg_connection():
   return psycopg.connect(
     host=PG_HOST,
@@ -53,6 +60,7 @@ def ensure_table():
   with get_pg_connection() as conn:
     with conn.cursor() as cur:
       cur.execute(CREATE_TABLE_SQL)
+      cur.execute(CREATE_WORKERS_TABLE_SQL)
       conn.commit()
 
 def insert_metrics(minute: datetime, requests: int):
@@ -68,6 +76,24 @@ def insert_metrics(minute: datetime, requests: int):
         # conn.rollback()
         # logger.exception("Failed to insert requests_per_minute for %s: %s", bucket_minute, e)
         raise
+    
+def replace_workers_snapshot(workers: list[dict]):
+  with get_pg_connection() as conn:
+    with conn.cursor() as cur:
+      cur.execute("TRUNCATE workers_state;")
+      for w in workers:
+        raw_ts = w.get("start_time")
+        try:
+          start_time = datetime.fromtimestamp(float(raw_ts), tz=timezone.utc)
+        except Exception:
+          start_time = None
+
+        cur.execute(
+          "INSERT INTO workers_state (container_id, start_time) VALUES (%s, %s)",
+          (w.get("container_id"), start_time)
+        )
+
+    conn.commit()
 
 
 # step 1 - get data from redis
@@ -112,6 +138,7 @@ def run_task3():
       print(f"      - id={w.get('container_id')} start_time={formatted}")
 
     insert_metrics(prev_minute, minute_count)
+    replace_workers_snapshot(workers)
     
     print(" ")
 
@@ -129,7 +156,7 @@ print("Scheduler started...")
 
 try:
   ensure_table()
-  
+
   while True:
     time.sleep(1)
 except KeyboardInterrupt:
