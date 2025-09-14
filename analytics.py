@@ -14,8 +14,13 @@ MINUTE_REQUEST_COUNTER_KEY: str = os.getenv("MINUTE_REQUEST_COUNTER_KEY", "minut
 
 redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
 
+POSTGRES_DSN: str = os.getenv(
+  "POSTGRES_DSN",
+  "postgresql://postgres:postgres@localhost:5433/postgres",
+)
+
 PG_HOST = os.getenv("PG_HOST", "localhost")
-PG_PORT = os.getenv("PG_PORT", "6379")
+PG_PORT = os.getenv("PG_PORT", "5433")
 PG_USER = os.getenv("PG_USER", "analytics")
 PG_PASSWORD = os.getenv("PG_PASSWORD", "analytics")
 PG_DATABASE = os.getenv("PG_DATABASE", "analytics")
@@ -29,10 +34,10 @@ CREATE TABLE IF NOT EXISTS requests_metrics (
 """
 
 INSERT_METRICS_SQL = """
-INSERT INTO requests_metrics (bucket_minute, requests)
+INSERT INTO requests_metrics (minute, request_count)
 VALUES (%s, %s)
-ON CONFLICT (bucket_minute) DO UPDATE
-SET requests = EXCLUDED.requests;
+ON CONFLICT (minute) DO NOTHING
+RETURNING minute;
 """
 
 def get_pg_connection():
@@ -41,7 +46,7 @@ def get_pg_connection():
     port=PG_PORT,
     user=PG_USER,
     password=PG_PASSWORD,
-    database=PG_DATABASE
+    dbname=PG_DATABASE
   )
 
 def ensure_table():
@@ -50,17 +55,17 @@ def ensure_table():
       cur.execute(CREATE_TABLE_SQL)
       conn.commit()
 
-def insert_metrics(self, bucket_minute: datetime, requests: int) -> None:
-    self.ensure_connection()
+def insert_metrics(minute: datetime, requests: int):
     try:
-        with self.conn.cursor() as cur:
-            cur.execute(
-                INSERT_METRICS_SQL,
-                (bucket_minute, requests),
-            )
-        self.conn.commit()
+      with get_pg_connection() as conn:
+        with conn.cursor() as cur:
+          cur.execute(
+            INSERT_METRICS_SQL,
+            (minute, requests),
+          )
+        conn.commit()
     except Exception as e:
-        self.conn.rollback()
+        # conn.rollback()
         # logger.exception("Failed to insert requests_per_minute for %s: %s", bucket_minute, e)
         raise
 
@@ -123,6 +128,8 @@ scheduler.start()
 print("Scheduler started...")
 
 try:
+  ensure_table()
+  
   while True:
     time.sleep(1)
 except KeyboardInterrupt:
