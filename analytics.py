@@ -47,6 +47,20 @@ CREATE TABLE IF NOT EXISTS workers_state (
 );
 """
 
+CREATE_GLOBAL_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS global_request_counter (
+  ts TIMESTAMPTZ NOT NULL DEFAULT now(),
+  total_requests BIGINT NOT NULL,
+  PRIMARY KEY (ts)
+);
+"""
+
+INSERT_GLOBAL_SQL = """
+INSERT INTO global_request_counter (ts, total_requests)
+VALUES (%s, %s)
+ON CONFLICT (ts) DO NOTHING;
+"""
+
 def get_pg_connection():
   return psycopg.connect(
     host=PG_HOST,
@@ -61,6 +75,7 @@ def ensure_table():
     with conn.cursor() as cur:
       cur.execute(CREATE_TABLE_SQL)
       cur.execute(CREATE_WORKERS_TABLE_SQL)
+      cur.execute(CREATE_GLOBAL_TABLE_SQL)
       conn.commit()
 
 def insert_metrics(minute: datetime, requests: int):
@@ -95,6 +110,11 @@ def replace_workers_snapshot(workers: list[dict]):
 
     conn.commit()
 
+def insert_global_counter(ts: datetime, total: int):
+  with get_pg_connection() as conn:
+    with conn.cursor() as cur:
+      cur.execute(INSERT_GLOBAL_SQL, (ts, total))
+      conn.commit()
 
 # step 1 - get data from redis
 # step 2 - send data to cloud
@@ -139,6 +159,7 @@ def run_task3():
 
     insert_metrics(prev_minute, minute_count)
     replace_workers_snapshot(workers)
+    insert_global_counter(datetime.now(timezone.utc), count)
     
     print(" ")
 
