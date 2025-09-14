@@ -27,6 +27,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import signal
 import json
 import time
 import sys
@@ -530,6 +531,14 @@ def process_username(db: DB, session: requests.Session, username: str, redis_cli
       error_detail={"user": owner},
     )
 
+def handle_signal(sig, frame):
+    global stop_flag
+    logger.info("⚠️ Caught signal %s, shutting down gracefully...", sig)
+    stop_flag = True
+
+signal.signal(signal.SIGINT, handle_signal)
+signal.signal(signal.SIGTERM, handle_signal)
+
 stop_flag = False
 
 def consumer() -> None:
@@ -621,4 +630,8 @@ def consumer() -> None:
       pass
 
 if __name__ == "__main__":
-  consumer()
+  try:
+    consumer()
+  except Exception as e:
+    logger.error("Fatal error: %s", e)
+    sys.exit(1)
