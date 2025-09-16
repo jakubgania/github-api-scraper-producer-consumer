@@ -56,6 +56,7 @@ class Settings:
   MAX_QUEUE_SIZE: int = int(os.getenv("MAX_QUEUE_SIZE", "5000"))
   ENQUEUE_BLOCK_UNTIL_BELOW: int = int(os.getenv("ENQUEUE_BLOCK_UNTIL_BELOW", "40"))
   REQUEST_COUNTER_KEY: str = os.getenv("REQUEST_COUNTER_KEY", "github_requests_total")
+  MINUTE_REQUEST_COUNTER_KEY: str = os.getenv("MINUTE_REQUEST_COUNTER_KEY", "minute_requests_counter")
 
   # Start login if no pending in DB
   INITIAL_PROFILE_LOGIN: str = os.getenv("INITIAL_PROFILE_LOGIN", "jakubgania")
@@ -172,6 +173,10 @@ class GitHubClient:
 
       try:
         self.redis.incr(SETTINGS.REQUEST_COUNTER_KEY)
+
+        minute_key = f"{SETTINGS.MINUTE_REQUEST_COUNTER_KEY}:{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}"
+        self.redis.incr(minute_key)
+        self.redis.expire(minute_key, 120) # TTL = 120 seconds
       except Exception as e:
         logger.warning("Could not increment Redis counter: %s", e)
 
