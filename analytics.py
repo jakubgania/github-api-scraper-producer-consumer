@@ -1,10 +1,13 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 import time
 import os
 
 import redis
 import psycopg
+
+LOCAL_TZ = ZoneInfo("Europe/Berlin")
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
@@ -116,6 +119,43 @@ def insert_global_counter(ts: datetime, total: int):
       cur.execute(INSERT_GLOBAL_SQL, (ts, total))
       conn.commit()
 
+def estimate_milestones(current_total: int, step: int = 100000, window: int = 10):
+  since = datetime.now(timezone.utc) - timedelta(minutes=window)
+
+  sql = """
+  SELECT AVG(request_count)::float
+  FROM requests_metrics
+  WHERE minute > %s;
+  """
+  with get_pg_connection() as conn:
+      with conn.cursor() as cur:
+          cur.execute(sql, (since,))
+          avg_per_min = cur.fetchone()[0] or 0
+
+  if avg_per_min <= 0:
+    print("No data or average = 0")
+    return []
+  
+  milestones = []
+  now_ts = datetime.now(timezone.utc)
+
+  next_target = ((current_total // step) + 1) * step
+
+  for target in [next_target, next_target + step]:
+    remaining = target - current_total
+    minutes_needed = remaining / avg_per_min
+    eta = now_ts + timedelta(minutes=minutes_needed)
+    eta_local = eta.astimezone(LOCAL_TZ)
+    milestones.append({
+      "target": target,
+      "remaining": remaining,
+      "minutes_needed": minutes_needed,
+      "eta": eta_local
+    })
+
+  return milestones
+
+
 # step 1 - get data from redis
 # step 2 - send data to cloud
 
@@ -127,7 +167,7 @@ def run_task2():
 
 def run_task3():
   try:
-    count = redis_client.get(REQUEST_COUNTER_KEY) or 0
+    count = int(redis_client.get(REQUEST_COUNTER_KEY) or 0)
 
     prev_minute = (datetime.now(timezone.utc).replace(second=0, microsecond=0) - timedelta(minutes=1))
     minute_key = f"{MINUTE_REQUEST_COUNTER_KEY}:{prev_minute.strftime('%Y-%m-%d %H:%M')}"
@@ -156,6 +196,10 @@ def run_task3():
         formatted = "N/A"
 
       print(f"      - id={w.get('container_id')} start_time={formatted}")
+
+    milestones = estimate_milestones(count)
+    for m in milestones:
+      print(f"Milestone {m['target']:,} → za {m['minutes_needed']:.1f} min, około {m['eta'].strftime('%Y-%m-%d %H:%M:%S')}")
 
     insert_metrics(prev_minute, minute_count)
     replace_workers_snapshot(workers)
