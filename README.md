@@ -13,15 +13,15 @@ And activate the following option:
 
 ```bash
 docker build -t api-github-scraper .
-```
+```  
 
 ```bash
 docker-compose up -d
-```
+```  
 
 ```bash
 docker-compose down -v
-```
+```  
 
 ```bash
 docker run \
@@ -34,20 +34,20 @@ docker run \
 -e CONTAINER_ID=github-app-1
 --memory 128m \
 api-github-scraper
-```
+```  
 
 ```bash
 docker ps --filter "label=type=worker"
-```
+```  
 
 ```bash
 docker run -d --name redisinsight -p 5540:5540 redis/redisinsight:latest
-```
+```  
 
 ```bash
 docker ps -a
-```
+```  
 
 ```bash
 docker rm container-name
-```
+```  
