@@ -75,9 +75,9 @@ POSTGRES_WAIT_MAX_S = int(os.getenv("POSTGRES_WAIT_MAX_S", "120"))
 # -------------------- Logging --------------------
 
 logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.INFO),
-    format="%(asctime)s %(levelname)s %(name)s - %(message)s",
-    stream=sys.stdout,
+  level=getattr(logging, LOG_LEVEL, logging.INFO),
+  format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+  stream=sys.stdout,
 )
 logger = logging.getLogger("consumer")
 
@@ -153,7 +153,12 @@ VALUES (%s, %s, %s, %s);
 """
 
 def get_redis_connection() -> redis.Redis:
-  return redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
+  return redis.Redis(
+    host=REDIS_HOST,
+    port=REDIS_PORT,
+    db=REDIS_DB,
+    decode_responses=True
+  )
 
 def wait_for_postgres(dsn: str, max_wait_s: int) -> None:
   start = time.monotonic()
@@ -185,20 +190,20 @@ def init_db(dsn: str) -> None:
 
 def create_session() -> requests.Session:
     if not GITHUB_API_TOKEN:
-        logger.critical("💥 GITHUB_API_TOKEN is not set")
-        raise SystemExit(2)
+      logger.critical("💥 GITHUB_API_TOKEN is not set")
+      raise SystemExit(2)
 
     session = requests.Session()
 
     # Retries for transient errors
     retry = Retry(
-        total=HTTP_MAX_RETRIES,
-        connect=HTTP_MAX_RETRIES,
-        read=HTTP_MAX_RETRIES,
-        backoff_factor=0.5,
-        status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods=("POST",),
-        raise_on_status=False,
+      total=HTTP_MAX_RETRIES,
+      connect=HTTP_MAX_RETRIES,
+      read=HTTP_MAX_RETRIES,
+      backoff_factor=0.5,
+      status_forcelist=(429, 500, 502, 503, 504),
+      allowed_methods=("POST",),
+      raise_on_status=False,
     )
     adapter = HTTPAdapter(max_retries=retry)
     session.mount("http://", adapter)
@@ -281,7 +286,12 @@ def _respect_rate_limit(resp: requests.Response) -> None:
     pass
 
 def fetch_github_user(session: requests.Session, username: str, redis_client: redis.Redis) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], int]:
-  payload = {"query": REPOSITORY_OWNER_QUERY, "variables": {"username": username}}
+  payload = {
+    "query": REPOSITORY_OWNER_QUERY,
+    "variables": {
+      "username": username
+    }
+  }
   try:
     response = session.post(
       GITHUB_API_ENDPOINT,
@@ -321,22 +331,22 @@ def fetch_github_user(session: requests.Session, username: str, redis_client: re
 
     # Handle secondary rate limit / abuse detection
     if status == 403 and "rate limit" in response.text.lower():
-        logger.warning("Secondary rate limit hit for %s; backing off", username)
-        time.sleep(2)
+      logger.warning("Secondary rate limit hit for %s; backing off", username)
+      time.sleep(2)
 
     response.raise_for_status()
     data = response.json()
 
     if "errors" in data and data["errors"]:
-        return None, data, status
+      return None, data, status
     
     owner = data.get("data", {}).get("repositoryOwner")
     return owner, data, status
   
   except requests.RequestException as e:
-        # Return None with synthetic error payload
-        err = {"exception": type(e).__name__, "message": str(e)}
-        return None, err, getattr(e.response, "status_code", 0) or 0
+    # Return None with synthetic error payload
+    err = {"exception": type(e).__name__, "message": str(e)}
+    return None, err, getattr(e.response, "status_code", 0) or 0
 
 
 # -------------------- Persistence --------------------
@@ -355,8 +365,8 @@ class DB:
     self.conn = psycopg.connect(self.dsn, autocommit=False)
 
   def ensure_connection(self) -> None:
-      if self.conn is None or self.conn.closed:
-          self.connect()
+    if self.conn is None or self.conn.closed:
+      self.connect()
 
   def insert_user(self, user: Dict[str, Any]) -> bool:
     self.ensure_connection()
@@ -443,10 +453,10 @@ class DB:
     
   def close(self) -> None:
     if self.conn is not None:
-        try:
-          self.conn.close()
-        except Exception:
-          pass
+      try:
+        self.conn.close()
+      except Exception:
+        pass
 
 def process_username(db: DB, session: requests.Session, username: str, redis_client: redis.Redis) -> None:
   owner, raw, status = fetch_github_user(session, username, redis_client)
@@ -467,7 +477,12 @@ def process_username(db: DB, session: requests.Session, username: str, redis_cli
         error_type = "forbidden_or_rate_limited"
 
     logger.warning("No data for user %s (status %s; %s)", username, status, error_type)
-    db.record_dead_letter(username=username, error_type=error_type, http_status=status, error_detail=raw if isinstance(raw, dict) else {})
+    db.record_dead_letter(
+      username=username,
+      error_type=error_type,
+      http_status=status,
+      error_detail=raw if isinstance(raw, dict) else {}
+    )
     return
   
   typename = owner.get("__typename")
@@ -506,9 +521,9 @@ def process_username(db: DB, session: requests.Session, username: str, redis_cli
     )
 
 def handle_signal(sig, frame):
-    global stop_flag
-    logger.info("⚠️ Caught signal %s, shutting down gracefully...", sig)
-    stop_flag = True
+  global stop_flag
+  logger.info("⚠️ Caught signal %s, shutting down gracefully...", sig)
+  stop_flag = True
 
 signal.signal(signal.SIGINT, handle_signal)
 signal.signal(signal.SIGTERM, handle_signal)
@@ -534,8 +549,8 @@ def consumer() -> None:
   redis_client.hset(
     f"worker:{CONTAINER_ID}",
     mapping={
-        "container_id": CONTAINER_ID,
-        "start_time": started,
+      "container_id": CONTAINER_ID,
+      "start_time": started,
     }
   )
 
@@ -562,18 +577,18 @@ def consumer() -> None:
 
       # Process one username
       try:
-          result = process_username(db, session, username, redis_client)
-          if result == "inserted":
-            inserted_count += 1
-          elif result == "skipped":
-            skipped_count += 1
-          else:
-            dead_count += 1
+        result = process_username(db, session, username, redis_client)
+        if result == "inserted":
+          inserted_count += 1
+        elif result == "skipped":
+          skipped_count += 1
+        else:
+          dead_count += 1
 
-          processed += 1
+        processed += 1
 
-          if processed % LOG_PROGRESS_EVERY == 0:
-            logger.info("✅ Added: %d - ⚠️ Skipped: %d - 📡 Processed: %d", inserted_count, skipped_count, processed)
+        if processed % LOG_PROGRESS_EVERY == 0:
+          logger.info("✅ Added: %d - ⚠️ Skipped: %d - 📡 Processed: %d", inserted_count, skipped_count, processed)
       except Exception:
         # process_username already logs and dead-letters; still continue
         pass
