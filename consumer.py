@@ -233,32 +233,6 @@ def create_session() -> requests.Session:
 # twitterUsername - String
 # websiteUrl - URI
 
-BASIC_USER_QUERY = """
-query($username: String!) {
-    user(login: $username) {
-        login
-        name
-        email
-        bio
-        company
-        location
-        createdAt
-        isHireable
-        repositories {
-          totalCount
-        }
-        followers {
-            totalCount
-        }
-        following {
-            totalCount
-        }
-        twitterUsername
-        websiteUrl
-    }
-}
-"""
-
 REPOSITORY_OWNER_QUERY = """
 query($username: String!) {
   repositoryOwner(login: $username) {
