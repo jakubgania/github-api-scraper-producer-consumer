@@ -51,3 +51,13 @@ docker ps -a
 ```bash
 docker rm container-name
 ```  
+
+### Resources
+
+[https://github.com/astral-sh/uv](https://github.com/astral-sh/uv)  
+[https://formulae.brew.sh/formula/pulumi](https://formulae.brew.sh/formula/pulumi)  
+[https://formulae.brew.sh/formula/awscli](https://formulae.brew.sh/formula/awscli)  
+[https://hub.docker.com/r/redis/redisinsight](https://hub.docker.com/r/redis/redisinsight)  
+[https://hub.docker.com/_/postgres](https://hub.docker.com/_/postgres)  
+[https://docs.github.com/en/graphql](https://docs.github.com/en/graphql)  
+[https://github.com/agronholm/apscheduler](https://github.com/agronholm/apscheduler)  
