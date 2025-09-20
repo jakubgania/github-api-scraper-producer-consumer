@@ -4,8 +4,43 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Document</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 2rem;
+    }
+    #data {
+      margin-top: 1rem;
+      padding: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      background: #f9f9f9;
+      white-space: pre-wrap;
+      font-family: monospace;
+    }
+  </style>
 </head>
 <body>
-  <div>dashboard</div>
+  <h1>Dashboard</h1>
+  <div id="data">Loading data...</div>
+
+  <script>
+    async function loadData() {
+      try {
+        const response = await fetch("data.json", { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const json = await response.json();
+        document.getElementById("data").textContent = JSON.stringify(json, null, 2);
+      } catch (err) {
+        document.getElementById("data").textContent = "Error loading data: " + err;
+      }
+    }
+
+    loadData();
+    
+    setInterval(loadData, 60000);
+  </script>
 </body>
 </html>
