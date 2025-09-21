@@ -1,7 +1,9 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
+from pathlib import Path
 import time
+import json
 import os
 
 import redis
@@ -15,7 +17,12 @@ REDIS_DB = int(os.getenv("REDIS_DB", "0"))
 REQUEST_COUNTER_KEY = os.getenv("REQUEST_COUNTER_KEY", "github_requests_total")
 MINUTE_REQUEST_COUNTER_KEY: str = os.getenv("MINUTE_REQUEST_COUNTER_KEY", "minute_requests_counter")
 
-redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
+redis_client = redis.Redis(
+  host=REDIS_HOST,
+  port=REDIS_PORT,
+  db=REDIS_DB,
+  decode_responses=True
+)
 
 POSTGRES_DSN: str = os.getenv(
   "POSTGRES_DSN",
@@ -206,6 +213,19 @@ def run_task3():
     insert_global_counter(datetime.now(timezone.utc), count)
     
     print(" ")
+
+    snapshot = {
+      "timestamp": datetime.now(timezone.utc).isoformat(),
+      "total_requests": count,
+      "requests_last_minute": minute_count,
+      "workers": workers
+    }
+
+    output_path = Path("dashboard-analytics/aws/data.json")
+    with output_path.open("w", encoding="utf-8") as f:
+      json.dump(snapshot, f, indent=2)
+
+    # print("")
 
     # here you can add e.g. sending to the cloud
   except Exception as e:
