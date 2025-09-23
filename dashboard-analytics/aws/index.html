@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Document</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/6.0.0/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/date-fns@3.6.0/cdn.min.js"></script>
+  </head>
   <style>
     body {
       font-family: sans-serif;
@@ -21,10 +25,89 @@
   </style>
 </head>
 <body>
-  <h1>Dashboard</h1>
+  <h1 class="text-3xl font-bold pb-2">
+    Dashboard
+  </h1>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div class="p-4 rounded-lg shadow bg-white">
+      <p class="text-sm text-gray-500 mb-1">Total Requests</p>
+      <p id="totalRequests" class="text-6xl font-semibold">--</p>
+    </div>
+    <div class="p-4 rounded-lg shadow bg-white">
+      <p class="text-sm text-gray-500 mb-1">Requests Last Minute</p>
+      <p id="requestsLastMinute" class="text-6xl font-semibold">--</p>
+    </div>
+    <div class="p-4 rounded-lg shadow bg-white">
+      <p class="text-sm text-gray-500 mb-1">Workers</p>
+      <p id="workersCount" class="text-6xl font-semibold">--</p>
+    </div>
+  </div>
+
+  <div class="mb-6">
+    <h2 class="text-xl font-bold mb-2">Workers</h2>
+    <div class="overflow-x-auto rounded-lg shadow bg-white">
+      <table class="w-full text-left border-collapse">
+        <thead class="bg-gray-100">
+          <tr>
+            <th class="px-4 py-2">Status</th>
+            <th class="px-4 py-2">Container ID</th>
+            <th class="px-4 py-2">Start Time</th>
+            <th class="px-4 py-2">Uptime</th>
+          </tr>
+        </thead>
+        <tbody id="workersTable">
+          <tr>
+            <td colspan="4" class="px-4 py-2 text-gray-500 text-center">No data</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <p id="nextUpdate" class="text-sm text-gray-500 mt-2 mb-2">
+    Next update in 60s
+  </p>
+
+  <h2 class="text-xl font-bold mb-2">Raw data</h2>
   <div id="data">Loading data...</div>
 
   <script>
+    let countdown = 60;
+
+    function updateCountdown() {
+      document.getElementById("nextUpdate").textContent = `Next update in ${countdown}s`;
+    }
+
+    function tickCountdown() {
+      if (countdown > 0) {
+        countdown--;
+        updateCountdown();
+      }
+    }
+
+    function formatTimestamp(ts) {
+      let date;
+      if (!isNaN(ts)) {
+        const num = Number(ts);
+        date = new Date(num < 1e12 ? num * 1000 : num);
+      } else {
+        date = new Date(ts);
+      }
+      return dateFns.format(date, "yyyy-MM-dd HH:mm:ss");
+    }
+
+    function formatRelative(ts) {
+      let date;
+      if (!isNaN(ts)) {
+        const num = Number(ts);
+        date = new Date(num < 1e12 ? num * 1000 : num);
+      } else {
+        date = new Date(ts);
+      }
+      return dateFns.formatDistanceToNow(date, { addSuffix: true });
+    }
+
     async function loadData() {
       try {
         const response = await fetch("data.json", { cache: "no-store" });
@@ -32,7 +115,43 @@
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         const json = await response.json();
+
+        countdown = 60;
+        updateCountdown();
+
         document.getElementById("data").textContent = JSON.stringify(json, null, 2);
+
+        document.getElementById("totalRequests").textContent = json.total_requests ?? "--";
+        document.getElementById("requestsLastMinute").textContent = json.requests_last_minute ?? "--";
+        document.getElementById("workersCount").textContent = json.workers?.length ?? 0;
+
+        const workersTable = document.getElementById("workersTable");
+        workersTable.innerHTML = "";
+
+        if (json.workers && json.workers.length > 0) {
+          json.workers.forEach((worker, index) => {
+            const row = document.createElement("tr");
+
+            const isLast = index === json.workers.length - 1;
+            row.className = isLast ? "" : "border-b border-slate-200";
+
+            row.innerHTML = `
+              <td class="px-4 py-2">
+                <span class="inline-block w-3 h-3 bg-green-500 rounded-full"></span>
+              </td>
+              <td class="px-4 py-2 font-mono">${worker.container_id}</td>
+              <td class="px-4 py-2">${formatTimestamp(worker.start_time)}</td>
+              <td class="px-4 py-2 text-gray-600">${formatRelative(worker.start_time)}</td>
+            `;
+            workersTable.appendChild(row);
+          });
+        } else {
+          workersTable.innerHTML = `
+            <tr>
+              <td colspan="4" class="px-4 py-2 text-gray-500 text-center">No workers</td>
+            </tr>
+          `;
+        }
       } catch (err) {
         document.getElementById("data").textContent = "Error loading data: " + err;
       }
@@ -41,6 +160,7 @@
     loadData();
     
     setInterval(loadData, 60000);
+    setInterval(tickCountdown, 1000);
   </script>
 </body>
 </html>
