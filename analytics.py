@@ -162,6 +162,26 @@ def estimate_milestones(current_total: int, step: int = 100000, window: int = 10
 
   return milestones
 
+def get_last_requests_metrics(limit: int = 60) -> list[dict]:
+  sql = """
+  SELECT minute, request_count
+  FROM requests_metrics
+  ORDER BY minute DESC
+  LIMIT %s
+  """
+
+  with get_pg_connection() as conn:
+    with conn.cursor() as cur:
+      cur.execute(sql, (limit,))
+      rows = cur.fetchall()
+
+  rows.reverse()
+
+  return [
+    {"timestamp": r[0].isoformat(), "requests_count": r[1]}
+    for r in rows
+  ]
+
 
 # step 1 - get data from redis
 # step 2 - send data to cloud
@@ -218,7 +238,13 @@ def run_task3():
       "timestamp": datetime.now(timezone.utc).isoformat(),
       "total_requests": count,
       "requests_last_minute": minute_count,
-      "workers": workers
+      "workers": workers,
+      "next_milestone": {
+        "target": milestones[0]['target'],
+        "minutes_needed": milestones[0]['minutes_needed'],
+        "estimated_time_of_arrival": milestones[0]['eta']
+      },
+      "requests_metrics": get_last_requests_metrics(60)
     }
 
     output_path = Path("dashboard-analytics/aws/data.json")
