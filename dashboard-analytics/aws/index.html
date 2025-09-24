@@ -25,23 +25,32 @@
   </style>
 </head>
 <body>
-  <h1 class="text-3xl font-bold pb-2">
+  <h1 class="text-4xl font-bold pb-2">
     Dashboard
   </h1>
 
+  <p id="nextUpdate" class="text-sm text-gray-500 mt-2 mb-2">
+    Next update in 60s
+  </p>
+
   <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-    <div class="p-4 rounded-lg shadow bg-white">
+    <div class="p-4 rounded-xl shadow-md bg-white">
       <p class="text-sm text-gray-500 mb-1">Total Requests</p>
-      <p id="totalRequests" class="text-6xl font-semibold">--</p>
+      <p id="totalRequests" class="text-6xl font-semibold font-mono">--</p>
     </div>
-    <div class="p-4 rounded-lg shadow bg-white">
+    <div class="p-4 rounded-xl shadow-md bg-white">
       <p class="text-sm text-gray-500 mb-1">Requests Last Minute</p>
-      <p id="requestsLastMinute" class="text-6xl font-semibold">--</p>
+      <p id="requestsLastMinute" class="text-6xl font-semibold font-mono">--</p>
     </div>
-    <div class="p-4 rounded-lg shadow bg-white">
+    <div class="p-4 rounded-xl shadow-md bg-white">
       <p class="text-sm text-gray-500 mb-1">Workers</p>
-      <p id="workersCount" class="text-6xl font-semibold">--</p>
+      <p id="workersCount" class="text-6xl font-semibold font-mono">--</p>
     </div>
+  </div>
+
+  <div class="mb-6">
+    <h2 class="text-xl font-bold mb-2">Requests Metrics</h2>
+    <div id="requestsChart" class="w-full" style="height: 380px;"></div>
   </div>
 
   <div class="mb-6">
@@ -65,12 +74,18 @@
     </div>
   </div>
 
-  <p id="nextUpdate" class="text-sm text-gray-500 mt-2 mb-2">
-    Next update in 60s
-  </p>
+  <div class="mb-6">
+    <h2 class="text-xl font-bold mb-2">Raw data</h2>
+    <button id="toggleRaw" class="mb-2 text-sm text-blue-600 hover:underline">
+      Show raw data
+    </button>
+    <div id="data" class="p-4 border border-gray-300 rounded bg-gray-50 font-mono text-sm hidden">
+      Loading data...
+    </div>
+  </div>
 
-  <h2 class="text-xl font-bold mb-2">Raw data</h2>
-  <div id="data">Loading data...</div>
+  <!-- <h2 class="text-xl font-bold mb-2">Raw data</h2> -->
+  <!-- <div id="data">Loading data...</div> -->
 
   <script>
     let countdown = 60;
@@ -106,6 +121,62 @@
         date = new Date(ts);
       }
       return dateFns.formatDistanceToNow(date, { addSuffix: true });
+    }
+
+    let requestsChart;
+    function initChart() {
+      const chartDom = document.getElementById("requestsChart");
+      requestsChart = echarts.init(chartDom);
+    }
+    function updateChart(metrics) {
+      if (!requestsChart) {
+        initChart();
+      }
+      const times = metrics.map(m => dateFns.format(new Date(m.timestamp), "HH:mm"));
+      const counts = metrics.map(m => m.requests_count);
+
+      const option = {
+        tooltip: { trigger: "axis" },
+        grid: {
+          left: '0%',
+          right: '0%',
+          top: '8%',
+          bottom: '10%',
+          containLabel: true,
+        },
+        xAxis: {
+          type: "category",
+          data: times,
+          boundaryGap: true,
+          axisLabel: { rotate: 45 }
+        },
+        yAxis: {
+          type: 'value',
+          min: 0,
+          max: (val) => Math.ceil(val.max / 10) * 10 + 10,
+          interval: 10,
+        },
+        series: [
+          {
+            name: "Requests per Minute",
+            type: "bar",
+            data: counts,
+            itemStyle: {
+              color: {
+                type: 'linear',
+                x: 0, y: 0, x2: 0, y2: 1,
+                colorStops: [
+                  { offset: 0, color: '#3399ff' },
+                  { offset: 1, color: '#66ccff' }
+                ]
+              }
+            },
+            barCategoryGap: '10%',
+          }
+        ]
+      };
+      requestsChart.setOption(option);
+      requestsChart.resize();
     }
 
     async function loadData() {
@@ -152,6 +223,10 @@
             </tr>
           `;
         }
+
+        if (json.requests_metrics) {
+          updateChart(json.requests_metrics);
+        }
       } catch (err) {
         document.getElementById("data").textContent = "Error loading data: " + err;
       }
@@ -161,6 +236,23 @@
     
     setInterval(loadData, 60000);
     setInterval(tickCountdown, 1000);
+    window.addEventListener("resize", () => {
+      if (requestsChart) requestsChart.resize();
+    });
+
+    const toggleRawBtn = document.getElementById("toggleRaw");
+    const dataBox = document.getElementById("data");
+
+    toggleRawBtn.addEventListener("click", () => {
+      const isHidden = dataBox.classList.contains("hidden");
+      if (isHidden) {
+        dataBox.classList.remove("hidden");
+        toggleRawBtn.textContent = "Hide raw data";
+      } else {
+        dataBox.classList.add("hidden");
+        toggleRawBtn.textContent = "Show raw data";
+      }
+    });
   </script>
 </body>
 </html>
