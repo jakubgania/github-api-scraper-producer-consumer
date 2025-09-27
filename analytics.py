@@ -201,6 +201,24 @@ def get_last_24h_metrics() -> list[dict]:
     for r in rows
   ]
 
+def get_last_24h_metrics_hourly() -> list[dict]:
+  sql = """
+  SELECT date_trunc('hour', minute) AS hour, SUM(request_count) AS requests_count
+  FROM requests_metrics
+  WHERE minute >= NOW() - interval '24 hours'
+  GROUP BY hour
+  ORDER BY hour ASC;
+  """
+  with get_pg_connection() as conn:
+    with conn.cursor() as cur:
+      cur.execute(sql)
+      rows = cur.fetchall()
+
+  return [
+    {"timestamp": r[0].isoformat(), "requests_count": int(r[1])}
+    for r in rows
+  ]
+
 
 # step 1 - get data from redis
 # step 2 - send data to cloud
