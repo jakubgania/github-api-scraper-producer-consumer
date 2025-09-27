@@ -182,6 +182,25 @@ def get_last_requests_metrics(limit: int = 60) -> list[dict]:
     for r in rows
   ]
 
+def get_last_24h_metrics() -> list[dict]:
+  since = datetime.now(timezone.utc) - timedelta(hours=24)
+  sql = """
+  SELECT minute, request_count
+  FROM requests_metrics
+  WHERE minute >= %s
+  ORDER BY minute ASC
+  """
+
+  with get_pg_connection() as conn:
+    with conn.cursor() as cur:
+      cur.execute(sql, (since,))
+      rows = cur.fetchall()
+
+  return [
+    {"timestamp": r[0].isoformat(), "requests_count": r[1]}
+    for r in rows
+  ]
+
 
 # step 1 - get data from redis
 # step 2 - send data to cloud
