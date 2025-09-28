@@ -10,6 +10,16 @@ And activate the following option:
 
 "Prevent automatic sleeping on power adapter when the display is off"
 
+If you want to view or test the dashboard locally
+
+```bash
+python3 -m http.server 8000
+```
+
+then in the browser
+
+http://localhost:8000/index.html
+
 
 ```bash
 docker build -t api-github-scraper .
