@@ -10,15 +10,25 @@ And activate the following option:
 
 "Prevent automatic sleeping on power adapter when the display is off"
 
-If you want to view or test the dashboard locally
+### If you want to view or test the dashboard locally
+
+Go to this folder:
+
+```bash
+dashboard-analytics/aws
+```
+
+Then run this command
 
 ```bash
 python3 -m http.server 8000
 ```
 
-then in the browser
+Then in the browser
 
 http://localhost:8000/index.html
+
+### Docker commands
 
 
 ```bash
