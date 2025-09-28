@@ -281,7 +281,9 @@ def run_task3():
         "minutes_needed": milestones[0]['minutes_needed'],
         "estimated_time_of_arrival": milestones[0]['eta']
       },
-      "requests_metrics": get_last_requests_metrics(60)
+      "requests_metrics": get_last_requests_metrics(60),
+      "requests_24h_minute": get_last_24h_metrics(),
+      "requests_24h_hour": get_last_24h_metrics_hourly()
     }
 
     output_path = Path("dashboard-analytics/aws/data.json")
