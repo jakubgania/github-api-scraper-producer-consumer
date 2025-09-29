@@ -1,5 +1,7 @@
 # github-api-scraper-producer-consumer
 
+This is a scraper project for the GitHub GraphQL API, built with a producer–consumer architecture. 
+
 Important Information ⚠️
 
 If you want to run this app on your MacBook for several hours or days, be sure to keep the following in mind. Connect you MacBook to a power source and then go to:
@@ -18,15 +20,13 @@ Go to this folder:
 dashboard-analytics/aws
 ```
 
-Then run this command
+Then run this command:
 
 ```bash
 python3 -m http.server 8000
 ```
 
-Then in the browser
-
-http://localhost:8000/index.html
+Then open in your browser: `http://localhost:8000/index.html`
 
 ### Docker commands
 
