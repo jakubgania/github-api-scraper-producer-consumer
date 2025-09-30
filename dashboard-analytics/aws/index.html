@@ -51,15 +51,15 @@
   <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
     <div class="p-4 rounded-xl shadow-md bg-white">
       <p class="text-sm text-gray-500 mb-1">Next Milestone</p>
-      <p id="next_milestone_target" class="text-4xl font-semibold font-mono">--</p>
+      <p id="nextMilestoneTarget" class="text-2xl font-semibold font-mono">--</p>
     </div>
     <div class="p-4 rounded-xl shadow-md bg-white">
       <p class="text-sm text-gray-500 mb-1">Minutes Needed</p>
-      <p id="next_milestone_minutes_needed" class="text-4xl font-semibold font-mono">--</p>
+      <p id="nextMilestoneMinutesNeeded" class="text-2xl font-semibold font-mono">--</p>
     </div>
     <div class="p-4 rounded-xl shadow-md bg-white">
       <p class="text-sm text-gray-500 mb-1">Estimated time of arrival</p>
-      <p id="next_milestone_estimated_time_of_arrival" class="text-4xl font-semibold font-mono">--</p>
+      <p id="nextMilestoneEta" class="text-2xl font-semibold font-mono">--</p>
     </div>
   </div>
 
@@ -210,6 +210,21 @@
         document.getElementById("totalRequests").textContent = json.total_requests ?? "--";
         document.getElementById("requestsLastMinute").textContent = json.requests_last_minute ?? "--";
         document.getElementById("workersCount").textContent = json.workers?.length ?? 0;
+
+        document.getElementById("nextMilestoneTarget").textContent = json.next_milestone["target"] ?? "--";
+        const minutes = json.next_milestone["minutes_needed"] ?? null;
+
+        document.getElementById("nextMilestoneMinutesNeeded").textContent = minutes !== null ? minutes.toFixed(1) : "--";
+        const eta = json.next_milestone["estimated_time_of_arrival"] ?? null;
+
+        document.getElementById("nextMilestoneEta").textContent =
+          eta !== null 
+            ? new Date(eta).toLocaleString("en-GB", { 
+                dateStyle: "medium", 
+                timeStyle: "short", 
+                timeZone: "Europe/Berlin"
+              })
+            : "--";
 
         const workersTable = document.getElementById("workersTable");
         workersTable.innerHTML = "";
