@@ -182,8 +182,8 @@ def get_last_requests_metrics(limit: int = 60) -> list[dict]:
     for r in rows
   ]
 
-def get_last_24h_metrics() -> list[dict]:
-  since = datetime.now(timezone.utc) - timedelta(hours=24)
+def get_last_12h_metrics() -> list[dict]:
+  since = datetime.now(timezone.utc) - timedelta(hours=12)
   sql = """
   SELECT minute, request_count
   FROM requests_metrics
@@ -270,6 +270,7 @@ def run_task3():
     insert_global_counter(datetime.now(timezone.utc), count)
     
     print(" ")
+    print(milestones[0])
 
     snapshot = {
       "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -279,10 +280,10 @@ def run_task3():
       "next_milestone": {
         "target": milestones[0]['target'],
         "minutes_needed": milestones[0]['minutes_needed'],
-        "estimated_time_of_arrival": milestones[0]['eta']
+        "estimated_time_of_arrival": milestones[0]['eta'].isoformat()
       },
       "requests_metrics": get_last_requests_metrics(60),
-      "requests_24h_minute": get_last_24h_metrics(),
+      "requests_24h_minute": get_last_12h_metrics(),
       "requests_24h_hour": get_last_24h_metrics_hourly()
     }
 
