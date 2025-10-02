@@ -63,9 +63,28 @@
     </div>
   </div>
 
+  <!-- Requests Metrics -->
   <div class="mb-6">
     <h2 class="text-xl font-bold mb-2">Requests Metrics</h2>
     <div id="requestsChart" class="w-full" style="height: 380px;"></div>
+  </div>
+
+  <!-- Toggle for 12/24 Hours -->
+  <div class="mb-6">
+    <button id="toggle12h24h" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">Show 12 Hours</button>
+  </div>
+
+  <!-- 12/24h Request Metrics (Line Only) -->
+  <div class="mb-6">
+    <h2 class="text-xl font-bold mb-2">12/24 Hours Requests (Line Only)</h2>
+    <div id="chart12h24" class="w-full" style="height: 380px;"></div>
+  </div>
+
+  <!-- 24h Requests per Hour (Bar and Line) -->
+  <div class="mb-6">
+    <button id="toggleStyle24h" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">Switch to Line</button>
+    <h2 class="text-xl font-bold mb-2">Requests per Hour (24h)</h2>
+    <div id="chart24h" class="w-full" style="height: 380px;"></div>
   </div>
 
   <div class="mb-6">
@@ -103,7 +122,18 @@
   <!-- <div id="data">Loading data...</div> -->
 
   <script>
+    let dataMinutes = [];
+    let dataHours = [];
+    let data12h24h = [];
+    let currentMode = "minutes";
+    let currentStyle24h = "bar";
+    let toggle12h24hValue = "12";  // Start with 12 hours
+
     let countdown = 60;
+
+    let chartRequests = echarts.init(document.getElementById("requestsChart"));
+    let chart12h24 = echarts.init(document.getElementById("chart12h24"));
+    let chart24h = echarts.init(document.getElementById("chart24h"));
 
     function updateCountdown() {
       document.getElementById("nextUpdate").textContent = `Next update in ${countdown}s`;
@@ -169,7 +199,7 @@
           type: 'value',
           min: 0,
           max: (val) => Math.ceil(val.max / 10) * 10 + 10,
-          interval: 10,
+          // interval: 20,
         },
         series: [
           {
@@ -194,6 +224,118 @@
       requestsChart.resize();
     }
 
+    // Update the chart with 12/24 hours request metrics (Line only)
+    function render12h24Chart(data) {
+      const times = data.map(d => dateFns.format(new Date(d.timestamp), "HH:mm"));
+      const counts = data.map(d => d.requests_count);
+
+      const option = {
+        tooltip: { trigger: "axis" },
+        grid: { left: '0%', right: '0%', top: '8%', bottom: '10%', containLabel: true },
+        xAxis: {
+          type: "category",
+          data: times,
+          axisLabel: { 
+            rotate: 45,
+            formatter: function (value) {
+              const [hour, minute] = value.split(":");
+              
+              if (minute === "00") {
+                return value; 
+              }
+              
+              return ''; 
+            }
+          }
+        },
+        yAxis: { type: "value" },
+        series: [{
+          type: "line",
+          data: counts,
+          smooth: true,
+          showSymbol: false,
+          itemStyle: { color: "#3399ff" }
+        }]
+      };
+      chart12h24.setOption(option);
+    }
+
+    // let chart24h = echarts.init(document.getElementById("chart24h"));
+    // let currentMode = "minutes";
+    let currentStyle = "bar";
+
+     document.getElementById("toggleStyle24h").addEventListener("click", () => {
+      currentStyle24h = currentStyle24h === "bar" ? "line" : "bar";
+
+      console.log("currentStyle24h after toggle:", currentStyle24h);
+      
+      document.getElementById("toggleStyle24h").textContent = currentStyle24h === "bar" ? "Switch to Line" : "Switch to Bar";
+      
+      render24hChart(dataHours, currentStyle24h);
+    });
+
+
+
+    function render24hChart(data, chartType) {
+      console.log("Rendering chart with type:", chartType); 
+      const times = data.map(d => dateFns.format(new Date(d.timestamp), "HH:mm"));
+      const counts = data.map(d => d.requests_count);
+
+      const option = {
+        tooltip: { trigger: "axis" },
+        grid: {
+          left: '0%',
+          right: '0%',
+          top: '8%',
+          bottom: '10%',
+          containLabel: true,
+        },
+        xAxis: {
+          type: "category",
+          data: times,
+          boundaryGap: true,
+          axisLabel: {
+            rotate: 45,
+          },
+          // splitLine: { show: false },
+          // axisTick: { show: false },
+        },
+        yAxis: {
+          type: "value",
+          // splitLine: { show: false },
+        },
+        series: [
+          {
+            type: chartType,
+            data: counts,
+            smooth: chartType === "line",
+            showSymbol: false,
+            barCategoryGap: "8%",
+            itemStyle: {
+              color: "#3399ff"
+            }
+          }
+        ]
+      };
+
+      chart24h.setOption(option);
+    }
+
+    // // Toggle style for 24h chart (bar/line)
+    // document.getElementById("toggleStyle24h").addEventListener("click", () => {
+    //   currentStyle24h = currentStyle24h === "bar" ? "line" : "bar";  // Zmiana typu wykresu
+    //   document.getElementById("toggleStyle24h").textContent = currentStyle24h === "bar" ? "Switch to Line" : "Switch to Bar";
+      
+    //   render24hChart(dataHours, currentStyle24h); // Przekazanie typu wykresu
+    // });
+
+    // Function to filter data for 12 or 24 hours
+    function filterDataForLastHours(data, hours) {
+      const now = new Date();
+      const timeLimit = now.setHours(now.getHours() - hours); // Subtract hours from current time
+      return data.filter(d => new Date(d.timestamp) >= timeLimit);
+    }
+
     async function loadData() {
       try {
         const response = await fetch("data.json", { cache: "no-store" });
@@ -201,6 +343,10 @@
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         const json = await response.json();
+
+        dataMinutes = json.requests_24h_minute || [];
+        data12h24h = json.requests_24h_minute || [];
+        dataHours = json.requests_24h_hour || [];
 
         countdown = 60;
         updateCountdown();
@@ -257,6 +403,16 @@
         if (json.requests_metrics) {
           updateChart(json.requests_metrics);
         }
+
+        if (json.requests_24h_minute) {
+          // Filter data for last 12 or 24 hours
+          const filtered12h24hData = filterDataForLastHours(data12h24h, toggle12h24hValue === "12" ? 12 : 24);
+          render12h24Chart(filtered12h24hData);
+        }
+
+        if (json.requests_24h_hour) {
+          render24hChart(dataHours, currentStyle24h);
+        }
       } catch (err) {
         document.getElementById("data").textContent = "Error loading data: " + err;
       }
@@ -268,6 +424,16 @@
     setInterval(tickCountdown, 1000);
     window.addEventListener("resize", () => {
       if (requestsChart) requestsChart.resize();
+      if (chart12h24) chart12h24.resize();
+      if (chart24h) chart24h.resize();
+    });
+
+     // Toggle between 12h and 24h
+    document.getElementById("toggle12h24h").addEventListener("click", () => {
+      toggle12h24hValue = toggle12h24hValue === "12" ? "24" : "12";
+      document.getElementById("toggle12h24h").textContent = toggle12h24hValue === "12" ? "Show 24 Hours" : "Show 12 Hours";
+      const filtered12h24hData = filterDataForLastHours(data12h24h, toggle12h24hValue === "12" ? 12 : 24);
+      render12h24Chart(filtered12h24hData); // Render filtered data
     });
 
     const toggleRawBtn = document.getElementById("toggleRaw");
