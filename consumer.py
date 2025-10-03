@@ -218,6 +218,16 @@ def create_session() -> requests.Session:
     )
     return session
 
+def incr_minute_counter(redis_client: redis.Redis, kind: str):
+  """Increment per-minute counter for inserted/skipped/dead/processed"""
+  now_minute = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+  key = f"github:{kind}_minute:{now_minute}"
+  try:
+    redis_client.incr(key)
+    redis_client.expire(key, 3700)
+  except Exception as e:
+    logger.warning("Could not increment minute counter %s: %s", kind, e)
+
 # -------------------- GitHub API --------------------
 
 # login - string
@@ -551,12 +561,20 @@ def consumer() -> None:
     mapping={
       "container_id": CONTAINER_ID,
       "start_time": started,
+      "inserted": 0,
+      "skipped": 0,
+      "dead": 0,
+      "processed": 0,
     }
   )
 
   inserted_count = 0
   skipped_count = 0
   processed = 0
+
+  loop_inserted_count = 0
+  loop_skipped_count = 0
+  loop_processed = 0
 
   try:
     while not stop_flag:
@@ -580,12 +598,27 @@ def consumer() -> None:
         result = process_username(db, session, username, redis_client)
         if result == "inserted":
           inserted_count += 1
+          loop_inserted_count += 1
+          redis_client.incr("github:inserted_total")
+          redis_client.hincrby(f"worker:{CONTAINER_ID}", "inserted", 1)
+          incr_minute_counter(redis_client, "inserted")
         elif result == "skipped":
           skipped_count += 1
+          loop_skipped_count += 1
+          redis_client.incr("github:skipped_total")
+          redis_client.hincrby(f"worker:{CONTAINER_ID}", "skipped", 1)
+          incr_minute_counter(redis_client, "skipped")
         else:
           dead_count += 1
+          redis_client.incr("github:dead_total")
+          redis_client.hincrby(f"worker:{CONTAINER_ID}", "dead", 1)
+          # incr_minute_counter(redis_client, "dead")
 
         processed += 1
+        loop_processed += 1
+        redis_client.incr("github:processed_total")
+        redis_client.hincrby(f"worker:{CONTAINER_ID}", "processed", 1)
+        # incr_minute_counter(redis_client, "processed")
 
         if processed % LOG_PROGRESS_EVERY == 0:
           logger.info("✅ Added: %d - ⚠️ Skipped: %d - 📡 Processed: %d", inserted_count, skipped_count, processed)
