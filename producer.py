@@ -36,6 +36,18 @@ class Settings:
     "postgresql://postgres:postgres@localhost:5432/postgres",
   )
 
+  POSTGRES_DSN_ANALYTICS: str = os.getenv(
+    "POSTGRES_DSN",
+    "postgresql://postgres:postgres@localhost:5433/postgres",
+  )
+
+  PG_HOST_ANALYTICS = os.getenv("PG_HOST", "localhost")
+  PG_PORT_ANALYTICS = os.getenv("PG_PORT", "5433")
+  PG_USER_ANALYTICS = os.getenv("PG_USER", "analytics")
+  PG_PASSWORD_ANALYTICS = os.getenv("PG_PASSWORD", "analytics")
+  PG_DATABASE_ANALYTICS = os.getenv("PG_DATABASE", "analytics")
+
+
   # Redis
   REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
   REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
@@ -65,6 +77,7 @@ class Settings:
   CHECK_SERVICES: bool = os.getenv("CHECK_SERVICES", "1") == "1"
   SERVICES: tuple[tuple[str, str, int], ...] = (
     ("postgres", os.getenv("PG_HOST", "localhost"), int(os.getenv("PG_PORT", "5432"))),
+    ("analytics", os.getenv("PG_ANALYTICS", "localhost"), int(os.getenv("ANALYTICS_PORT", "5433"))),
     ("redis", os.getenv("REDIS_HOST", "localhost"), int(os.getenv("REDIS_PORT", "6379"))),
   )
 
@@ -314,6 +327,51 @@ def mark_user_status(login: str, status: str) -> None:
     with conn.cursor() as cur:
       cur.execute("UPDATE users SET status = %s WHERE login = %s;", (status, login))
       conn.commit()
+
+def get_pg_connection_analytics():
+  return psycopg.connect(
+    host=SETTINGS.PG_HOST_ANALYTICS,
+    port=SETTINGS.PG_PORT_ANALYTICS,
+    user=SETTINGS.PG_USER_ANALYTICS,
+    password=SETTINGS.PG_PASSWORD_ANALYTICS,
+    dbname=SETTINGS.PG_DATABASE_ANALYTICS,
+  )
+
+def get_processed_total_from_analytics() -> int:
+  try:
+    with get_pg_connection_analytics() as conn:
+      with conn.cursor() as cur:
+        cur.execute(
+          "SELECT total_requests FROM global_request_counter ORDER BY ts DESC LIMIT 1;"
+        )
+        row = cur.fetchone()
+        if row:
+          return int(row[0])
+  except Exception as e:
+    print(f"[bootstrap] WARN: could not read processed_total from analytics: {e}")
+
+  return 0
+
+def init_ingest_counters(redis_client):
+  with psycopg.connect(SETTINGS.POSTGRES_DSN) as conn:
+    with conn.cursor() as cur:
+      cur.execute("SELECT COUNT(*) FROM users;")
+      users_count = cur.fetchone()[0] or 0
+
+      cur.execute("SELECT COUNT(*) FROM organizations;")
+      orgs_count = cur.fetchone()[0] or 0
+
+      total_inserted = users_count + orgs_count
+
+  processed_total = get_processed_total_from_analytics()
+
+  redis_client.set("github:inserted_total", total_inserted)
+  redis_client.set("github:skipped_total", 0)
+  redis_client.set("github:dead_total", 0)
+  redis_client.set("github:processed_total", processed_total)
+
+  return total_inserted, processed_total
+
 
 # ----------------------------------------------------------------------------
 # REDIS — queue and deduplication
@@ -673,6 +731,9 @@ def main():
   except GitHubError as e:
     logger.error("Token validation failed: %s", e)
     sys.exit(1)
+
+  bootstrap_inserted, bootstrap_processed = init_ingest_counters(redis_client)
+  logger.info("Bootstrap counters → inserted_total=%s, processed_total=%s", bootstrap_inserted, bootstrap_processed)
 
   start_all = time.time()
   logger.info("Worker started. Queue size=%s", queue.size())
