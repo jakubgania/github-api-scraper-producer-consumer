@@ -182,8 +182,8 @@ def get_last_requests_metrics(limit: int = 60) -> list[dict]:
     for r in rows
   ]
 
-def get_last_12h_metrics() -> list[dict]:
-  since = datetime.now(timezone.utc) - timedelta(hours=12)
+def get_last_24h_metrics() -> list[dict]:
+  since = datetime.now(timezone.utc) - timedelta(hours=24)
   sql = """
   SELECT minute, request_count
   FROM requests_metrics
@@ -219,6 +219,26 @@ def get_last_24h_metrics_hourly() -> list[dict]:
     for r in rows
   ]
 
+def get_last_ingest_metrics_60min() -> list[dict]:
+    now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    results = []
+    for i in range(60):
+        minute = now - timedelta(minutes=(59 - i))
+        minute_str = minute.strftime("%Y-%m-%d %H:%M")
+
+        inserted  = int(redis_client.get(f"github:inserted_minute:{minute_str}") or 0)
+        skipped   = int(redis_client.get(f"github:skipped_minute:{minute_str}") or 0)
+        processed = int(redis_client.get(f"github:processed_minute:{minute_str}") or 0)
+
+        results.append({
+            "timestamp": minute.isoformat(),
+            "inserted": inserted,
+            "skipped": skipped,
+            "processed": processed,
+        })
+        
+    return results[:-1]
+
 
 # step 1 - get data from redis
 # step 2 - send data to cloud
@@ -236,15 +256,44 @@ def run_task3():
     prev_minute = (datetime.now(timezone.utc).replace(second=0, microsecond=0) - timedelta(minutes=1))
     minute_key = f"{MINUTE_REQUEST_COUNTER_KEY}:{prev_minute.strftime('%Y-%m-%d %H:%M')}"
     # minute_key = f"{MINUTE_REQUEST_COUNTER_KEY}:{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}"
+    prev_minute_str = prev_minute.strftime("%Y-%m-%d %H:%M")
+
+    inserted_minute  = int(redis_client.get(f"github:inserted_minute:{prev_minute_str}") or 0)
+    skipped_minute   = int(redis_client.get(f"github:skipped_minute:{prev_minute_str}") or 0)
+    processed_minute = int(redis_client.get(f"github:processed_minute:{prev_minute_str}") or 0)
+
+    print(f">>>ingest per minute: inserted={inserted_minute}, skipped={skipped_minute}, processed={processed_minute}")
+
     minute_count = int(redis_client.get(minute_key) or 0)
+
+    # --- GLOBAL INGEST COUNTERS (inserted/skipped/dead/processed) ---
+    g_inserted, g_skipped, g_dead, g_processed = redis_client.mget(
+      "github:inserted_total",
+      "github:skipped_total",
+      "github:dead_total",
+      "github:processed_total",
+    )
+    inserted_total  = int(g_inserted  or 0)
+    skipped_total   = int(g_skipped   or 0)
+    dead_total      = int(g_dead      or 0)
+    processed_total = int(g_processed or 0)
 
     worker_keys = redis_client.keys("worker:*")
     workers = []
     for key in worker_keys:
       data = redis_client.hgetall(key)
-      workers.append(data)
+      # workers.append(data)
+      workers.append({
+        "container_id": data.get("container_id"),
+        "start_time": data.get("start_time"),
+        "inserted": int(data.get("inserted") or 0),
+        "skipped": int(data.get("skipped") or 0),
+        "dead": int(data.get("dead") or 0),
+        "processed": int(data.get("processed") or 0),
+      })
 
     print(f">>>data from redis - {datetime.now().strftime('%H:%M:%S')} | total GitHub requests = {count}")
+    print(f"    ingest totals: inserted={inserted_total} skipped={skipped_total} dead={dead_total} processed={processed_total}")
     print(f">>>requests per minute: {minute_count}")
     print(f"   active workers = {len(workers)}")
 
@@ -282,8 +331,15 @@ def run_task3():
         "minutes_needed": milestones[0]['minutes_needed'],
         "estimated_time_of_arrival": milestones[0]['eta'].isoformat()
       },
+      "ingest_totals": {
+        "inserted": inserted_total,
+        "skipped": skipped_total,
+        "dead": dead_total,
+        "processed": processed_total,
+      },
+      "ingest_60min": get_last_ingest_metrics_60min(),
       "requests_metrics": get_last_requests_metrics(60),
-      "requests_24h_minute": get_last_12h_metrics(),
+      "requests_24h_minute": get_last_24h_metrics(),
       "requests_24h_hour": get_last_24h_metrics_hourly()
     }
 
