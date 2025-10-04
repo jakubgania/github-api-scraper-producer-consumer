@@ -635,7 +635,7 @@ def consumer() -> None:
       # 4800 from 5000 = 96%
       # time.sleep(0.75)
 
-      time.sleep(0.6)
+      time.sleep(0.5)
   
   finally:
     elapsed = time.time() - started
