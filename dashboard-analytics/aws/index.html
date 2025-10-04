@@ -33,34 +33,51 @@
     Next update in 60s
   </p>
 
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+    <div class="p-4 rounded-xl bg-slate-100">
+      <p class="text-sm text-gray-500 mb-1">Inserted items</p>
+      <p id="totalInsertedItems" class="text-6xl font-semibold font-mono">--</p>
+    </div>
+    <div class="p-4 rounded-xl bg-slate-100">
+      <p class="text-sm text-gray-500 mb-1">Total Requests</p>
+      <p id="totalProcessedItems" class="text-6xl font-semibold font-mono">--</p>
+    </div>
+  </div>
+
   <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-    <div class="p-4 rounded-xl shadow-md bg-white">
+    <div class="p-4 rounded-xl bg-slate-100">
       <p class="text-sm text-gray-500 mb-1">Total Requests</p>
       <p id="totalRequests" class="text-6xl font-semibold font-mono">--</p>
     </div>
-    <div class="p-4 rounded-xl shadow-md bg-white">
+    <div class="p-4 rounded-xl bg-slate-100">
       <p class="text-sm text-gray-500 mb-1">Requests Last Minute</p>
       <p id="requestsLastMinute" class="text-6xl font-semibold font-mono">--</p>
     </div>
-    <div class="p-4 rounded-xl shadow-md bg-white">
+    <div class="p-4 rounded-xl bg-slate-100">
       <p class="text-sm text-gray-500 mb-1">Workers</p>
       <p id="workersCount" class="text-6xl font-semibold font-mono">--</p>
     </div>
   </div>
 
   <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-    <div class="p-4 rounded-xl shadow-md bg-white">
+    <div class="p-4 rounded-xl bg-slate-100">
       <p class="text-sm text-gray-500 mb-1">Next Milestone</p>
       <p id="nextMilestoneTarget" class="text-2xl font-semibold font-mono">--</p>
     </div>
-    <div class="p-4 rounded-xl shadow-md bg-white">
+    <div class="p-4 rounded-xl bg-slate-100">
       <p class="text-sm text-gray-500 mb-1">Minutes Needed</p>
       <p id="nextMilestoneMinutesNeeded" class="text-2xl font-semibold font-mono">--</p>
     </div>
-    <div class="p-4 rounded-xl shadow-md bg-white">
+    <div class="p-4 rounded-xl bg-slate-100">
       <p class="text-sm text-gray-500 mb-1">Estimated time of arrival</p>
       <p id="nextMilestoneEta" class="text-2xl font-semibold font-mono">--</p>
     </div>
+  </div>
+
+  <!-- Added and skipped items metrics -->
+  <div class="mb-6">
+    <h2 class="text-xl font-bold mb-2">Added / Skipped Metrics</h2>
+    <div id="addedAndSkippedChart" class="w-full" style="height: 380px;"></div>
   </div>
 
   <!-- Requests Metrics -->
@@ -76,7 +93,7 @@
 
   <!-- 12/24h Request Metrics (Line Only) -->
   <div class="mb-6">
-    <h2 class="text-xl font-bold mb-2">12/24 Hours Requests (Line Only)</h2>
+    <h2 class="text-xl font-bold mb-2">12/24 Hours Requests</h2>
     <div id="chart12h24" class="w-full" style="height: 380px;"></div>
   </div>
 
@@ -97,6 +114,7 @@
             <th class="px-4 py-2">Container ID</th>
             <th class="px-4 py-2">Start Time</th>
             <th class="px-4 py-2">Uptime</th>
+            <th class="px-4 py-2">Processed</th>
           </tr>
         </thead>
         <tbody id="workersTable">
@@ -131,6 +149,7 @@
 
     let countdown = 60;
 
+    let addedAndSkippedChart = echarts.init(document.getElementById("addedAndSkippedChart"));
     let chartRequests = echarts.init(document.getElementById("requestsChart"));
     let chart12h24 = echarts.init(document.getElementById("chart12h24"));
     let chart24h = echarts.init(document.getElementById("chart24h"));
@@ -168,6 +187,50 @@
       return dateFns.formatDistanceToNow(date, { addSuffix: true });
     }
 
+    function renderAddedAndSkippedChart(data) {
+      const times = data.map(d => dateFns.format(new Date(d.timestamp), "HH:mm"));
+      const inserted = data.map(d => d.inserted);
+      const skipped = data.map(d => d.skipped);
+
+      const option = {
+        tooltip: { trigger: "axis" },
+        legend: { data: ["Inserted", "Skipped"] },
+        grid: {
+          left: '0%',
+          right: '0%',
+          top: '8%',
+          bottom: '10%',
+          containLabel: true,
+        },
+        xAxis: {
+          type: "category",
+          data: times,
+          axisLabel: { rotate: 45 }
+        },
+        yAxis: { type: "value" },
+        series: [
+          {
+            name: "Inserted",
+            type: "line",
+            // smooth: true,
+            showSymbol: false,
+            data: inserted,
+            itemStyle: { color: "#2bff60" }
+          },
+          {
+            name: "Skipped",
+            type: "line",
+            // smooth: true,
+            showSymbol: false,
+            data: skipped,
+            itemStyle: { color: "#842bff" }
+          }
+        ]
+      };
+
+      addedAndSkippedChart.setOption(option);
+    }
+
     let requestsChart;
     function initChart() {
       const chartDom = document.getElementById("requestsChart");
@@ -197,8 +260,8 @@
         },
         yAxis: {
           type: 'value',
-          min: 0,
-          max: (val) => Math.ceil(val.max / 10) * 10 + 10,
+          // min: 0,
+          // max: (val) => Math.ceil(val.max / 10) * 10 + 10,
           // interval: 20,
         },
         series: [
@@ -239,12 +302,10 @@
             rotate: 45,
             formatter: function (value) {
               const [hour, minute] = value.split(":");
-              
               if (minute === "00") {
-                return value; 
+                return value;
               }
-              
-              return ''; 
+              return "";
             }
           }
         },
@@ -353,6 +414,8 @@
 
         document.getElementById("data").textContent = JSON.stringify(json, null, 2);
 
+        document.getElementById("totalInsertedItems").textContent = json.ingest_totals["inserted"] ?? "--";
+        document.getElementById("totalProcessedItems").textContent = json.ingest_totals["processed"] ?? "--";
         document.getElementById("totalRequests").textContent = json.total_requests ?? "--";
         document.getElementById("requestsLastMinute").textContent = json.requests_last_minute ?? "--";
         document.getElementById("workersCount").textContent = json.workers?.length ?? 0;
@@ -389,6 +452,7 @@
               <td class="px-4 py-2 font-mono">${worker.container_id}</td>
               <td class="px-4 py-2">${formatTimestamp(worker.start_time)}</td>
               <td class="px-4 py-2 text-gray-600">${formatRelative(worker.start_time)}</td>
+              <td class="px-4 py-2 font-mono">${worker.processed}</td>
             `;
             workersTable.appendChild(row);
           });
@@ -413,6 +477,14 @@
         if (json.requests_24h_hour) {
           render24hChart(dataHours, currentStyle24h);
         }
+
+        if (json.ingest_60min) {
+          console.log("ingest_60min", json.ingest_60min); // 👀 debug
+
+          renderAddedAndSkippedChart(json.ingest_60min);
+        } else {
+          renderAddedAndSkippedChart([]);
+        }
       } catch (err) {
         document.getElementById("data").textContent = "Error loading data: " + err;
       }
@@ -423,6 +495,7 @@
     setInterval(loadData, 60000);
     setInterval(tickCountdown, 1000);
     window.addEventListener("resize", () => {
+      if (addedAndSkippedChart) addedAndSkippedChart.resize();
       if (requestsChart) requestsChart.resize();
       if (chart12h24) chart12h24.resize();
       if (chart24h) chart24h.resize();
