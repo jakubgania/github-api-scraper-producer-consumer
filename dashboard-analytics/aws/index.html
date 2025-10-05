@@ -136,16 +136,13 @@
     </div>
   </div>
 
-  <!-- <h2 class="text-xl font-bold mb-2">Raw data</h2> -->
-  <!-- <div id="data">Loading data...</div> -->
-
   <script>
     let dataMinutes = [];
     let dataHours = [];
     let data12h24h = [];
     let currentMode = "minutes";
     let currentStyle24h = "bar";
-    let toggle12h24hValue = "12";  // Start with 12 hours
+    let toggle12h24hValue = "12";
 
     let countdown = 60;
 
@@ -193,8 +190,12 @@
       const skipped = data.map(d => d.skipped);
 
       const option = {
-        tooltip: { trigger: "axis" },
-        legend: { data: ["Inserted", "Skipped"] },
+        tooltip: {
+          trigger: "axis"
+        },
+        legend: {
+          data: ["Inserted", "Skipped"]
+        },
         grid: {
           left: '0%',
           right: '0%',
@@ -207,7 +208,9 @@
           data: times,
           axisLabel: { rotate: 45 }
         },
-        yAxis: { type: "value" },
+        yAxis: {
+          type: "value"
+        },
         series: [
           {
             name: "Inserted",
@@ -215,7 +218,9 @@
             // smooth: true,
             showSymbol: false,
             data: inserted,
-            itemStyle: { color: "#2bff60" }
+            itemStyle: {
+              color: "#2bff60"
+            }
           },
           {
             name: "Skipped",
@@ -223,7 +228,9 @@
             // smooth: true,
             showSymbol: false,
             data: skipped,
-            itemStyle: { color: "#842bff" }
+            itemStyle: {
+              color: "#842bff"
+            }
           }
         ]
       };
@@ -244,7 +251,9 @@
       const counts = metrics.map(m => m.requests_count);
 
       const option = {
-        tooltip: { trigger: "axis" },
+        tooltip: {
+          trigger: "axis"
+        },
         grid: {
           left: '0%',
           right: '0%',
@@ -321,8 +330,6 @@
       chart12h24.setOption(option);
     }
 
-    // let chart24h = echarts.init(document.getElementById("chart24h"));
-    // let currentMode = "minutes";
     let currentStyle = "bar";
 
      document.getElementById("toggleStyle24h").addEventListener("click", () => {
@@ -343,7 +350,9 @@
       const counts = data.map(d => d.requests_count);
 
       const option = {
-        tooltip: { trigger: "axis" },
+        tooltip: {
+          trigger: "axis"
+        },
         grid: {
           left: '0%',
           right: '0%',
