@@ -302,8 +302,16 @@
       const counts = data.map(d => d.requests_count);
 
       const option = {
-        tooltip: { trigger: "axis" },
-        grid: { left: '0%', right: '0%', top: '8%', bottom: '10%', containLabel: true },
+        tooltip: {
+          trigger: "axis"
+        },
+        grid: {
+          left: '0%',
+          right: '0%',
+          top: '8%',
+          bottom: '10%',
+          containLabel: true
+        },
         xAxis: {
           type: "category",
           data: times,
@@ -318,13 +326,17 @@
             }
           }
         },
-        yAxis: { type: "value" },
+        yAxis: {
+          type: "value"
+        },
         series: [{
           type: "line",
           data: counts,
           smooth: true,
           showSymbol: false,
-          itemStyle: { color: "#3399ff" }
+          itemStyle: {
+            color: "#3399ff"
+          }
         }]
       };
       chart12h24.setOption(option);
