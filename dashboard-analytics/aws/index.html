@@ -35,26 +35,41 @@
   <div class="mb-6">
     <button
       id="toggleSidePanel"
-      class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 transition"
+      class="px-3 py-1 bg-slate-100 rounded-lg hover:bg-gray-200 transition"
     >
-      Show Side Panel
+      Show side panel
     </button>
   </div>
 
-  <div id="layoutContainer" class="flex flex-col lg:flex-row w-full max-w-full transition-all duration-300 overflow-hidden">
+  <div id="layoutContainer" class="flex flex-col lg:flex-row lg:gap-4 w-full max-w-full transition-all duration-300">
 
-    <div id="sidePanel" class="hidden flex-col gap-4 w-[380px] bg-slate-50 rounded-lg flex-shrink-0 transition-all duration-300">
+    <div id="sidePanel" class="hidden flex flex-col gap-3 w-[380px] rounded-lg flex-shrink-0 transition-all duration-300 sticky top-8 self-start">
+      <div class="p-4 rounded-xl bg-slate-100">
+        <p class="text-sm text-gray-500 mb-1">Next update in:</p>
+        <p id="nextUpdateSidePanel" class="text-4xl font-semibold font-mono">--</p>
+      </div>
       <div class="p-4 rounded-xl bg-slate-100">
         <p class="text-sm text-gray-500 mb-1">Inserted items</p>
         <p id="totalInsertedItemsSidePanel" class="text-4xl font-semibold font-mono">--</p>
+      </div>
+      <div class="p-4 rounded-xl bg-slate-100">
+        <p class="text-sm text-gray-500 mb-1">Total Requests</p>
+        <p id="totalProcessedItemsSidePanel" class="text-4xl font-semibold font-mono">--</p>
+      </div>
+      <div class="p-4 rounded-xl bg-slate-100">
+        <p class="text-sm text-gray-500 mb-1">Requests Last Minute</p>
+        <p id="requestsLastMinuteSidePanel" class="text-4xl font-semibold font-mono">--</p>
+      </div>
+      <div class="p-4 rounded-xl bg-slate-100">
+        <p class="text-sm text-gray-500 mb-1">Workers</p>
+        <p id="workersCountSidePanel" class="text-4xl font-semibold font-mono">--</p>
       </div>
     </div>
 
     <!-- <div id="mainContent" class="flex flex-col flex-grow gap-6"> -->
     <!-- <div id="mainContent" class="flex flex-col gap-4 w-full transition-all duration-300"> -->
     <!-- <div id="mainContent" class="flex flex-col flex-grow gap-4 transition-all duration-300"> -->
-    <div id="mainContent" class="flex flex-col flex-grow min-w-0 gap-4 transition-all duration-300">
-
+    <div id="mainContent" class="flex flex-col flex-grow min-w-0 transition-all duration-300">
 
       <div id="metricsSection" class="flex flex-col gap-4 w-full transition-all duration-300">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -101,36 +116,33 @@
 
       <!-- Added and skipped items metrics -->
       <div class="mb-6">
-        <h2 class="text-xl font-bold mb-2">Added / Skipped Metrics</h2>
+        <h2 class="text-2xl font-bold mb-2">Added / Skipped Metrics</h2>
         <div id="addedAndSkippedChart" class="w-full h-[400px]"></div>
       </div>
 
       <!-- Requests Metrics -->
       <div class="mb-6">
-        <h2 class="text-xl font-bold mb-2">Requests Metrics</h2>
+        <h2 class="text-2xl font-bold mb-2">Requests Metrics</h2>
         <div id="requestsChart" class="w-full h-[400px]"></div>
-      </div>
-
-      <!-- Toggle for 12/24 Hours -->
-      <div class="mb-6">
-        <button id="toggle12h24h" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">Show 12 Hours</button>
       </div>
 
       <!-- 12/24h Request Metrics (Line Only) -->
       <div class="mb-6">
-        <h2 class="text-xl font-bold mb-2">12/24 Hours Requests</h2>
+        <h2 class="text-2xl font-bold mb-2">12/24 Hours Requests</h2>
+        <!-- Toggle for 12/24 Hours -->
+        <button id="toggle12h24h" class="px-3 py-1 text-sm bg-gray-100 rounded-lg hover:bg-gray-200">Show 12 Hours</button>
         <div id="chart12h24" class="w-full h-[400px]"></div>
       </div>
 
       <!-- 24h Requests per Hour (Bar and Line) -->
       <div class="mb-6">
-        <button id="toggleStyle24h" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">Switch to Line</button>
-        <h2 class="text-xl font-bold mb-2">Requests per Hour (24h)</h2>
+        <h2 class="text-2xl font-bold mb-2">Requests per Hour (24h)</h2>
+        <button id="toggleStyle24h" class="px-3 py-1 text-sm bg-gray-100 rounded-lg hover:bg-gray-200">Switch to Line</button>
         <div id="chart24h" class="w-full h-[400px]"></div>
       </div>
 
-      <div class="mb-6">
-        <h2 class="text-xl font-bold mb-2">Workers</h2>
+      <div class="mb-6 ml-1 mr-1">
+        <h2 class="text-2xl font-bold mb-2">Workers</h2>
         <div class="overflow-x-auto rounded-lg shadow bg-white">
           <table class="w-full text-left border-collapse">
             <thead class="bg-gray-100">
@@ -182,6 +194,7 @@
 
     function updateCountdown() {
       document.getElementById("nextUpdate").textContent = `Next update in ${countdown}s`;
+      document.getElementById("nextUpdateSidePanel").textContent = `${countdown}s`;
     }
 
     function tickCountdown() {
@@ -346,12 +359,8 @@
           data: times,
           axisLabel: { 
             rotate: 45,
-            formatter: function (value) {
-              const [hour, minute] = value.split(":");
-              if (minute === "00") {
-                return value;
-              }
-              return "";
+            formatter: function (value, index) {
+              return index % 10 === 0 ? value : "";
             }
           }
         },
@@ -461,9 +470,12 @@
         document.getElementById("totalInsertedItems").textContent = json.ingest_totals["inserted"] ?? "--";
         document.getElementById("totalInsertedItemsSidePanel").textContent = json.ingest_totals["inserted"] ?? "--";
         document.getElementById("totalProcessedItems").textContent = json.ingest_totals["processed"] ?? "--";
+        document.getElementById("totalProcessedItemsSidePanel").textContent = json.ingest_totals["processed"] ?? "--";
         document.getElementById("totalRequests").textContent = json.total_requests ?? "--";
         document.getElementById("requestsLastMinute").textContent = json.requests_last_minute ?? "--";
+        document.getElementById("requestsLastMinuteSidePanel").textContent = json.requests_last_minute ?? "--";
         document.getElementById("workersCount").textContent = json.workers?.length ?? 0;
+        document.getElementById("workersCountSidePanel").textContent = json.workers?.length ?? 0;
 
         document.getElementById("nextMilestoneTarget").textContent = json.next_milestone["target"] ?? "--";
         const minutes = json.next_milestone["minutes_needed"] ?? null;
