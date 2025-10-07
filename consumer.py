@@ -627,6 +627,7 @@ def consumer() -> None:
         pass
 
       # Simple adaptive throttle based on remaining rate limit header is inside fetch; here a small pause
+      
       # 3600 / 0.8 = 4500 
       # 4500 from 5000 = 90%
       # time.sleep(0.8)
