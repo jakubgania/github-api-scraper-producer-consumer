@@ -11,7 +11,6 @@
   <style>
     body {
       font-family: sans-serif;
-      padding: 2rem;
     }
     #data {
       margin-top: 1rem;
@@ -24,7 +23,7 @@
     }
   </style>
 </head>
-<body>
+<body class="p-8">
   <h1 class="text-4xl font-bold pb-2">
     Dashboard
   </h1>
@@ -33,107 +32,137 @@
     Next update in 60s
   </p>
 
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-    <div class="p-4 rounded-xl bg-slate-100">
-      <p class="text-sm text-gray-500 mb-1">Inserted items</p>
-      <p id="totalInsertedItems" class="text-6xl font-semibold font-mono">--</p>
-    </div>
-    <div class="p-4 rounded-xl bg-slate-100">
-      <p class="text-sm text-gray-500 mb-1">Total Requests</p>
-      <p id="totalProcessedItems" class="text-6xl font-semibold font-mono">--</p>
-    </div>
-  </div>
-
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-    <div class="p-4 rounded-xl bg-slate-100">
-      <p class="text-sm text-gray-500 mb-1">Total Requests</p>
-      <p id="totalRequests" class="text-6xl font-semibold font-mono">--</p>
-    </div>
-    <div class="p-4 rounded-xl bg-slate-100">
-      <p class="text-sm text-gray-500 mb-1">Requests Last Minute</p>
-      <p id="requestsLastMinute" class="text-6xl font-semibold font-mono">--</p>
-    </div>
-    <div class="p-4 rounded-xl bg-slate-100">
-      <p class="text-sm text-gray-500 mb-1">Workers</p>
-      <p id="workersCount" class="text-6xl font-semibold font-mono">--</p>
-    </div>
-  </div>
-
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-    <div class="p-4 rounded-xl bg-slate-100">
-      <p class="text-sm text-gray-500 mb-1">Next Milestone</p>
-      <p id="nextMilestoneTarget" class="text-2xl font-semibold font-mono">--</p>
-    </div>
-    <div class="p-4 rounded-xl bg-slate-100">
-      <p class="text-sm text-gray-500 mb-1">Minutes Needed</p>
-      <p id="nextMilestoneMinutesNeeded" class="text-2xl font-semibold font-mono">--</p>
-    </div>
-    <div class="p-4 rounded-xl bg-slate-100">
-      <p class="text-sm text-gray-500 mb-1">Estimated time of arrival</p>
-      <p id="nextMilestoneEta" class="text-2xl font-semibold font-mono">--</p>
-    </div>
-  </div>
-
-  <!-- Added and skipped items metrics -->
   <div class="mb-6">
-    <h2 class="text-xl font-bold mb-2">Added / Skipped Metrics</h2>
-    <div id="addedAndSkippedChart" class="w-full h-[400px]"></div>
-  </div>
-
-  <!-- Requests Metrics -->
-  <div class="mb-6">
-    <h2 class="text-xl font-bold mb-2">Requests Metrics</h2>
-    <div id="requestsChart" class="w-full h-[400px]"></div>
-  </div>
-
-  <!-- Toggle for 12/24 Hours -->
-  <div class="mb-6">
-    <button id="toggle12h24h" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">Show 12 Hours</button>
-  </div>
-
-  <!-- 12/24h Request Metrics (Line Only) -->
-  <div class="mb-6">
-    <h2 class="text-xl font-bold mb-2">12/24 Hours Requests</h2>
-    <div id="chart12h24" class="w-full h-[400px]"></div>
-  </div>
-
-  <!-- 24h Requests per Hour (Bar and Line) -->
-  <div class="mb-6">
-    <button id="toggleStyle24h" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">Switch to Line</button>
-    <h2 class="text-xl font-bold mb-2">Requests per Hour (24h)</h2>
-    <div id="chart24h" class="w-full h-[400px]"></div>
-  </div>
-
-  <div class="mb-6">
-    <h2 class="text-xl font-bold mb-2">Workers</h2>
-    <div class="overflow-x-auto rounded-lg shadow bg-white">
-      <table class="w-full text-left border-collapse">
-        <thead class="bg-gray-100">
-          <tr>
-            <th class="px-4 py-2">Status</th>
-            <th class="px-4 py-2">Container ID</th>
-            <th class="px-4 py-2">Start Time</th>
-            <th class="px-4 py-2">Uptime</th>
-            <th class="px-4 py-2">Processed</th>
-          </tr>
-        </thead>
-        <tbody id="workersTable">
-          <tr>
-            <td colspan="4" class="px-4 py-2 text-gray-500 text-center">No data</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="mb-6">
-    <h2 class="text-xl font-bold mb-2">Raw data</h2>
-    <button id="toggleRaw" class="mb-2 text-sm text-blue-600 hover:underline">
-      Show raw data
+    <button
+      id="toggleSidePanel"
+      class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 transition"
+    >
+      Show Side Panel
     </button>
-    <div id="data" class="p-4 border border-gray-300 rounded bg-gray-50 font-mono text-sm hidden">
-      Loading data...
+  </div>
+
+  <div id="layoutContainer" class="flex flex-col lg:flex-row w-full max-w-full transition-all duration-300 overflow-hidden">
+
+    <div id="sidePanel" class="hidden flex-col gap-4 w-[380px] bg-slate-50 rounded-lg flex-shrink-0 transition-all duration-300">
+      <div class="p-4 rounded-xl bg-slate-100">
+        <p class="text-sm text-gray-500 mb-1">Inserted items</p>
+        <p id="totalInsertedItemsSidePanel" class="text-4xl font-semibold font-mono">--</p>
+      </div>
     </div>
+
+    <!-- <div id="mainContent" class="flex flex-col flex-grow gap-6"> -->
+    <!-- <div id="mainContent" class="flex flex-col gap-4 w-full transition-all duration-300"> -->
+    <!-- <div id="mainContent" class="flex flex-col flex-grow gap-4 transition-all duration-300"> -->
+    <div id="mainContent" class="flex flex-col flex-grow min-w-0 gap-4 transition-all duration-300">
+
+
+      <div id="metricsSection" class="flex flex-col gap-4 w-full transition-all duration-300">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div class="p-4 rounded-xl bg-slate-100">
+            <p class="text-sm text-gray-500 mb-1">Inserted items</p>
+            <p id="totalInsertedItems" class="text-6xl font-semibold font-mono">--</p>
+          </div>
+          <div class="p-4 rounded-xl bg-slate-100">
+            <p class="text-sm text-gray-500 mb-1">Total Requests</p>
+            <p id="totalProcessedItems" class="text-6xl font-semibold font-mono">--</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div class="p-4 rounded-xl bg-slate-100">
+            <p class="text-sm text-gray-500 mb-1">Total Requests</p>
+            <p id="totalRequests" class="text-6xl font-semibold font-mono">--</p>
+          </div>
+          <div class="p-4 rounded-xl bg-slate-100">
+            <p class="text-sm text-gray-500 mb-1">Requests Last Minute</p>
+            <p id="requestsLastMinute" class="text-6xl font-semibold font-mono">--</p>
+          </div>
+          <div class="p-4 rounded-xl bg-slate-100">
+            <p class="text-sm text-gray-500 mb-1">Workers</p>
+            <p id="workersCount" class="text-6xl font-semibold font-mono">--</p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div class="p-4 rounded-xl bg-slate-100">
+            <p class="text-sm text-gray-500 mb-1">Next Milestone</p>
+            <p id="nextMilestoneTarget" class="text-2xl font-semibold font-mono">--</p>
+          </div>
+          <div class="p-4 rounded-xl bg-slate-100">
+            <p class="text-sm text-gray-500 mb-1">Minutes Needed</p>
+            <p id="nextMilestoneMinutesNeeded" class="text-2xl font-semibold font-mono">--</p>
+          </div>
+          <div class="p-4 rounded-xl bg-slate-100">
+            <p class="text-sm text-gray-500 mb-1">Estimated time of arrival</p>
+            <p id="nextMilestoneEta" class="text-2xl font-semibold font-mono">--</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Added and skipped items metrics -->
+      <div class="mb-6">
+        <h2 class="text-xl font-bold mb-2">Added / Skipped Metrics</h2>
+        <div id="addedAndSkippedChart" class="w-full h-[400px]"></div>
+      </div>
+
+      <!-- Requests Metrics -->
+      <div class="mb-6">
+        <h2 class="text-xl font-bold mb-2">Requests Metrics</h2>
+        <div id="requestsChart" class="w-full h-[400px]"></div>
+      </div>
+
+      <!-- Toggle for 12/24 Hours -->
+      <div class="mb-6">
+        <button id="toggle12h24h" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">Show 12 Hours</button>
+      </div>
+
+      <!-- 12/24h Request Metrics (Line Only) -->
+      <div class="mb-6">
+        <h2 class="text-xl font-bold mb-2">12/24 Hours Requests</h2>
+        <div id="chart12h24" class="w-full h-[400px]"></div>
+      </div>
+
+      <!-- 24h Requests per Hour (Bar and Line) -->
+      <div class="mb-6">
+        <button id="toggleStyle24h" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">Switch to Line</button>
+        <h2 class="text-xl font-bold mb-2">Requests per Hour (24h)</h2>
+        <div id="chart24h" class="w-full h-[400px]"></div>
+      </div>
+
+      <div class="mb-6">
+        <h2 class="text-xl font-bold mb-2">Workers</h2>
+        <div class="overflow-x-auto rounded-lg shadow bg-white">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-gray-100">
+              <tr>
+                <th class="px-4 py-2">Status</th>
+                <th class="px-4 py-2">Container ID</th>
+                <th class="px-4 py-2">Start Time</th>
+                <th class="px-4 py-2">Uptime</th>
+                <th class="px-4 py-2">Processed</th>
+              </tr>
+            </thead>
+            <tbody id="workersTable">
+              <tr>
+                <td colspan="4" class="px-4 py-2 text-gray-500 text-center">No data</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="mb-6">
+        <h2 class="text-xl font-bold mb-2">Raw data</h2>
+        <button id="toggleRaw" class="mb-2 text-sm text-blue-600 hover:underline">
+          Show raw data
+        </button>
+        <div id="data" class="p-4 border border-gray-300 rounded bg-gray-50 font-mono text-sm hidden">
+          Loading data...
+        </div>
+      </div>
+
+    </div>
+
   </div>
 
   <script>
@@ -344,17 +373,11 @@
 
     let currentStyle = "bar";
 
-     document.getElementById("toggleStyle24h").addEventListener("click", () => {
+    document.getElementById("toggleStyle24h").addEventListener("click", () => {
       currentStyle24h = currentStyle24h === "bar" ? "line" : "bar";
-
-      console.log("currentStyle24h after toggle:", currentStyle24h);
-      
-      document.getElementById("toggleStyle24h").textContent = currentStyle24h === "bar" ? "Switch to Line" : "Switch to Bar";
-      
+      document.getElementById("toggleStyle24h").textContent = currentStyle24h === "bar" ? "Switch to Line" : "Switch to Bar";  
       render24hChart(dataHours, currentStyle24h);
     });
-
-
 
     function render24hChart(data, chartType) {
       console.log("Rendering chart with type:", chartType); 
@@ -436,6 +459,7 @@
         document.getElementById("data").textContent = JSON.stringify(json, null, 2);
 
         document.getElementById("totalInsertedItems").textContent = json.ingest_totals["inserted"] ?? "--";
+        document.getElementById("totalInsertedItemsSidePanel").textContent = json.ingest_totals["inserted"] ?? "--";
         document.getElementById("totalProcessedItems").textContent = json.ingest_totals["processed"] ?? "--";
         document.getElementById("totalRequests").textContent = json.total_requests ?? "--";
         document.getElementById("requestsLastMinute").textContent = json.requests_last_minute ?? "--";
@@ -543,6 +567,35 @@
         toggleRawBtn.textContent = "Show raw data";
       }
     });
+
+    const toggleSidePanelBtn = document.getElementById("toggleSidePanel");
+    const sidePanel = document.getElementById("sidePanel");
+    const metricsSection = document.getElementById("metricsSection");
+
+    toggleSidePanelBtn.addEventListener("click", () => {
+      const isPanelVisible = !sidePanel.classList.contains("hidden");
+
+      if (isPanelVisible) {
+        // 🔹 Ukryj side panel, pokaż metryki
+        sidePanel.classList.add("hidden");
+        metricsSection.classList.remove("hidden");
+        toggleSidePanelBtn.textContent = "Show Side Panel";
+      } else {
+        // 🔹 Pokaż side panel, ukryj metryki
+        sidePanel.classList.remove("hidden");
+        metricsSection.classList.add("hidden");
+        toggleSidePanelBtn.textContent = "Hide Side Panel";
+      }
+
+      setTimeout(() => {
+        addedAndSkippedChart?.resize();
+        chartRequests?.resize();
+        chart12h24?.resize();
+        chart24h?.resize();
+      }, 200);
+    });
+
+
   </script>
 </body>
 </html>
