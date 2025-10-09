@@ -58,8 +58,16 @@
         <p id="totalProcessedItemsSidePanel" class="text-4xl font-semibold font-mono">--</p>
       </div>
       <div class="p-4 rounded-xl bg-slate-100">
-        <p class="text-sm text-gray-500 mb-1">Requests last min.</p>
-        <p id="requestsLastMinuteSidePanel" class="text-4xl font-semibold font-mono">--</p>
+        <div class="grid grid-cols-2">
+          <div>
+            <p class="text-sm text-gray-500 mb-1">Requests last min.</p>
+            <p id="requestsLastMinuteSidePanel" class="text-4xl font-semibold font-mono">--</p>
+          </div>
+          <div>
+            <p class="text-sm text-gray-500 mb-1">Requests per sec.</p>
+            <p id="requestsPerSecondSidePanel" class="text-4xl font-semibold font-mono">--</p>
+          </div>
+        </div>
       </div>
       <div class="p-4 rounded-xl bg-slate-100">
         <div class="grid grid-cols-2">
@@ -571,6 +579,11 @@
         document.getElementById("totalRequests").textContent = json.total_requests ?? "--";
         document.getElementById("requestsLastMinute").textContent = json.requests_last_minute ?? "--";
         document.getElementById("requestsLastMinuteSidePanel").textContent = json.requests_last_minute ?? "--";
+
+        const requestsLastMinute = json.requests_last_minute ?? 0;
+        const requestsPerSecond = requestsLastMinute / 60;
+        document.getElementById("requestsPerSecondSidePanel").textContent = requestsPerSecond.toFixed(2);
+
         document.getElementById("workersCount").textContent = json.workers?.length ?? 0;
         document.getElementById("workersCountSidePanel").textContent = json.workers?.length ?? 0;
 
