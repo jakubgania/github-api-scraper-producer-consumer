@@ -65,8 +65,8 @@ class Settings:
   # Queue and deduplication
   QUEUE_NAME: str = os.getenv("QUEUE_NAME", "github_logins_queue")
   SEEN_SET: str = os.getenv("SEEN_SET", "github_seen_logins")
-  MAX_QUEUE_SIZE: int = int(os.getenv("MAX_QUEUE_SIZE", "5000"))
-  ENQUEUE_BLOCK_UNTIL_BELOW: int = int(os.getenv("ENQUEUE_BLOCK_UNTIL_BELOW", "40"))
+  MAX_QUEUE_SIZE: int = int(os.getenv("MAX_QUEUE_SIZE", "12000"))
+  ENQUEUE_BLOCK_UNTIL_BELOW: int = int(os.getenv("ENQUEUE_BLOCK_UNTIL_BELOW", "400"))
   REQUEST_COUNTER_KEY: str = os.getenv("REQUEST_COUNTER_KEY", "github_requests_total")
   MINUTE_REQUEST_COUNTER_KEY: str = os.getenv("MINUTE_REQUEST_COUNTER_KEY", "minute_requests_counter")
 
@@ -298,7 +298,11 @@ def load_progress() -> Optional[tuple[str, Optional[str], Optional[str]]]:
       return None
     
 def claim_pending_user() -> Optional[str]:
-  """ Takes the oldest `pending` and marks it as `in_progress` atomically. Returns login or None if none """
+  """ 
+  Takes the `pending` user with the highest followers_count 
+  and marks it as `in_progress` atomically. 
+  Returns login or None if none.
+  """
   with psycopg.connect(SETTINGS.POSTGRES_DSN) as conn:
     conn.execute("BEGIN")
     with conn.cursor() as cur:
@@ -306,7 +310,7 @@ def claim_pending_user() -> Optional[str]:
         """
         SELECT login FROM users
         WHERE status = 'pending'
-        ORDER BY created_at ASC
+        ORDER BY followers_count DESC
         FOR UPDATE SKIP LOCKED
         LIMIT 1;
         """
