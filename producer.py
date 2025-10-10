@@ -751,6 +751,8 @@ def main():
 
   if resumed:
     logger.info("Resume completed. Queue size=%s", queue.size())
+
+  MAX_RETRIES = 5
     
   # Main loop: get pending from DB and process
   while True:
@@ -768,17 +770,33 @@ def main():
       # Clear any old progress (just in case)
       save_progress(None, None, None)
 
-      try:
-        process_user(username, gh, queue)
-        mark_user_status(username, "done")
-      except GitHubError as e:
-        logger.error("GitHub error for user=%s: %s", username, e)
+      retries = 0
+
+      while retries < MAX_RETRIES:
+        try:
+          process_user(username, gh, queue)
+          mark_user_status(username, "done")
+          break
+        except GitHubError as e:
+          if "secondary rate limit" in str(e).lower or "403" in str(e):
+            wait_for = 20 * (2 ** retries)
+            logger.warning("Hit secondary rate limit for %s, retry %s/%s after %ss", username, retries + 1, MAX_RETRIES, wait_for)
+            time.sleep(wait_for)
+            retries += 1
+            continue
+          else:
+            logger.error("GitHub error for user=%s: %s", username, e)
+            mark_user_status(username, "failed")
+            break
+        except Exception as e:
+          logger.exception("Unexpected error for user=%s: %s", username, e)
+          mark_user_status(username, "failed")
+          break
+      else:
+        logger.error("User %s failed after %s retries — giving up.", username, MAX_RETRIES)
         mark_user_status(username, "failed")
-      except Exception as e:
-        logger.exception("Unexpected error for user=%s: %s", username, e)
-        mark_user_status(username, "failed")
-      finally:
-        save_progress(None, None, None)
+
+      save_progress(None, None, None)
     
     except KeyboardInterrupt:
       logger.info("Interrupted by user. Exiting...")
