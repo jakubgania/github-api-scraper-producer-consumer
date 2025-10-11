@@ -209,8 +209,56 @@ class GitHubClient:
 
     if resp.status_code == 403:
       #403 may indicate a secondary rate limit - take a break to reset
+      # self.rate_limiter.wait_until_reset_if_needed(remaining, reset_unix)
+      # raise GitHubError("Forbidden (403): possibly secondary rate limit")
+
+      if "secondary rate limit" in resp.text.lower():
+        logger.warning("Confirmed secondary rate limit: %s", resp.text.strip())
+
+      #Extract headers for debugging
+      limit = resp.headers.get("X-RateLimit-Limit")
+      remaining = resp.headers.get("X-RateLimit-Remaining")
+      reset_unix = resp.headers.get("X-RateLimit-Reset")
+      reset_time = {
+        datetime.fromtimestamp(int(reset_unix), tz=timezone.utc).isoformat()
+        if reset_unix and reset_unix.isdigit()
+        else "unknown"
+      }
+      resource = resp.headers.get("X-RateLimit-Resource")
+      used = resp.headers.get("X-RateLimit-Used")
+      retry_after = resp.headers.get("Retry-After")
+
+      logger.warning(
+        "GitHub 403 (possibly secondary rate limit): "
+        "remaining=%s, limit=%s, used=%s, resource=%s, reset=%s, retry_after=%s",
+        remaining, limit, used, resource, reset_time, retry_after
+      )
+
+      # Optional: store in Redis for analytics / alerting
+      try:
+        event = {
+          "ts": datetime.now(timezone.utc).isoformat(),
+          "status": 403,
+          "limit": limit,
+          "remaining": remaining,
+          "used": used,
+          "resource": resource,
+          "reset_unix": reset_unix,
+          "retry_after": retry_after,
+        }
+        self.redis.rpush("github:403_events", json.dumps(event))
+        self.redis.ltrim("github:403_events", -500, -1)  # keep last 500
+      except Exception as e:
+        logger.warning("Could not record 403 event: %s", e)
+
+      # Respect rate limit reset if it's clearly due
       self.rate_limiter.wait_until_reset_if_needed(remaining, reset_unix)
-      raise GitHubError("Forbidden (403): possibly secondary rate limit")
+
+      # Raise for upper-level retry logic
+      raise GitHubError(
+        f"Forbidden (403): possibly secondary rate limit. "
+        f"remaining={remaining}, reset={reset_time}"
+      )
     
     if resp.status_code >= 400:
       raise GitHubError(f"HTTP {resp.status_code}: {resp.text[:500]}")
@@ -653,7 +701,25 @@ def _paginate_collection(owner: str, collection_name: str, query: str, cursor: O
   while has_next and cursor:
     page += 1
     save_progress(owner, collection_name, cursor)
-    payload = gh.graphql(query, {"username": owner, "cursor": cursor})
+
+    # payload = gh.graphql(query, {"username": owner, "cursor": cursor})
+
+    try:
+      payload = gh.graphql(query, {"username": owner, "cursor": cursor})
+    except GitHubError as e:
+      err_msg = str(e).lower()
+      if "secondary rate limit" in err_msg or "403" in err_msg:
+        logger.warning(
+          "Hit secondary rate limit during pagination for %s/%s (page=%s). "
+          "Saving progress and raising for upper-level retry.",
+          owner, collection_name, page
+        )
+       
+        save_progress(owner, collection_name, cursor)
+        raise
+      else:
+        raise
+
     user = payload.get("data", {}).get("user") or {}
     data = user.get(collection_name) or {}
 
@@ -778,10 +844,18 @@ def main():
           mark_user_status(username, "done")
           break
         except GitHubError as e:
-          if "secondary rate limit" in str(e).lower or "403" in str(e):
-            wait_for = 20 * (2 ** retries)
+          err_msg = str(e).lower()
+          if "secondary rate limit" in err_msg or "403" in err_msg:
+            wait_for = 30 * (2 ** retries)
             logger.warning("Hit secondary rate limit for %s, retry %s/%s after %ss", username, retries + 1, MAX_RETRIES, wait_for)
             time.sleep(wait_for)
+
+            # Try to resume from saved cursor (if any)
+            if resume_if_needed(gh, queue):
+              logger.info("Resumed pagination for %s after rate limit.", username)
+              mark_user_status(username, "done")
+              break
+
             retries += 1
             continue
           else:
@@ -796,7 +870,12 @@ def main():
         logger.error("User %s failed after %s retries — giving up.", username, MAX_RETRIES)
         mark_user_status(username, "failed")
 
-      save_progress(None, None, None)
+      # ✅ only clear progress if we really finished the user
+      if retries == 0 or (retries < MAX_RETRIES and not ("403" in err_msg or "secondary rate limit" in err_msg)):
+        save_progress(None, None, None)
+      else:
+        logger.info("Keeping progress for user=%s due to retry or rate limit.", username)
+      # save_progress(None, None, None)
     
     except KeyboardInterrupt:
       logger.info("Interrupted by user. Exiting...")
