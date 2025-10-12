@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS users (
   company              TEXT,
   location             TEXT,
   created_at           TIMESTAMPTZ,
+  added_at             TIMESTAMPTZ DEFAULT now(),
   is_hireable          BOOLEAN,
   repositories_count   INT,
   followers_count      INT,
@@ -110,6 +111,7 @@ CREATE TABLE IF NOT EXISTS organizations (
   description          TEXT,
   location             TEXT,
   created_at           TIMESTAMPTZ,
+  added_at             TIMESTAMPTZ DEFAULT now(),
   repositories_count   INT,
   members_count        INT,
   twitter_username     TEXT,
@@ -130,10 +132,10 @@ CREATE TABLE IF NOT EXISTS dead_letters (
 
 SQL_INSERT_USER = """
 INSERT INTO users (
-  login, name, email, bio, company, location, created_at, is_hireable,
+  login, name, email, bio, company, location, created_at, added_at, is_hireable,
   repositories_count, followers_count, following_count, twitter_username, website_url, status
 ) VALUES (
-   %s, %s, %s, %s, %s, %s, %s, %s,
+   %s, %s, %s, %s, %s, %s, %s, %s, %s,
    %s, %s, %s, %s, %s, 'pending'
 )
 ON CONFLICT (login) DO NOTHING
@@ -141,8 +143,8 @@ RETURNING login;
 """
 
 SQL_INSERT_ORG = """
-INSERT INTO organizations (login, name, email, description, location, created_at, repositories_count, members_count, twitter_username, website_url)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+INSERT INTO organizations (login, name, email, description, location, created_at, added_at, repositories_count, members_count, twitter_username, website_url)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (login) DO NOTHING
 RETURNING login;
 """
@@ -303,11 +305,15 @@ def fetch_github_user(session: requests.Session, username: str, redis_client: re
     }
   }
   try:
+    # --- Measure the time for the API call ---
+    api_start = time.perf_counter()
     response = session.post(
       GITHUB_API_ENDPOINT,
       json=payload,
       timeout=(HTTP_CONNECT_TIMEOUT_S, HTTP_READ_TIMEOUT_S),
     )
+    api_time = time.perf_counter() - api_start
+    record_metric(redis_client, CONTAINER_ID, "api_response_time", api_time)  
 
     try:
       redis_client.incr(REQUEST_COUNTER_KEY)
@@ -381,6 +387,7 @@ class DB:
   def insert_user(self, user: Dict[str, Any]) -> bool:
     self.ensure_connection()
     try:
+      now = datetime.now(timezone.utc)
       with self.conn.cursor() as cur:
         cur.execute(
           SQL_INSERT_USER,
@@ -392,6 +399,7 @@ class DB:
             user.get("company"),
             user.get("location"),
             user.get("createdAt"),
+            now,
             user.get("isHireable"),
             (user.get("repositories") or {}).get("totalCount"),
             (user.get("followers") or {}).get("totalCount"),
@@ -412,6 +420,7 @@ class DB:
   def insert_organization(self, org: Dict[str, Any]) -> bool:
     self.ensure_connection()
     try:
+      now = datetime.now(timezone.utc)
       with self.conn.cursor() as cur:
         cur.execute(
           SQL_INSERT_ORG,
@@ -422,6 +431,7 @@ class DB:
             org.get("description"),
             org.get("location"),
             org.get("createdAt"),
+            now,
             (org.get("repositories") or {}).get("totalCount"),
             (org.get("membersWithRole") or {}).get("totalCount"),
             org.get("twitterUsername"),
@@ -498,20 +508,19 @@ def process_username(db: DB, session: requests.Session, username: str, redis_cli
   typename = owner.get("__typename")
 
   try:
+    db_insert_time = 0.0
     if typename == "User":
+      db_start = time.perf_counter()
       inserted = db.insert_user(owner)
+      db_insert_time = time.perf_counter() - db_start
+      record_metric(redis_client, CONTAINER_ID, "db_insert_user_time", db_insert_time)
       return "inserted" if inserted else "skipped"
-      # if inserted:
-      #   logger.info("✅ Saved %s to DB", username)
-      # else:
-      #   logger.info("⚠️ User %s already in DB, skipped", username)
     elif typename == "Organization":
+      db_start = time.perf_counter()
       inserted = db.insert_organization(owner)
+      db_insert_time = time.perf_counter() - db_start
+      record_metric(redis_client, CONTAINER_ID, "db_insert_org_time", db_insert_time)
       return "inserted" if inserted else "skipped"
-      # if inserted:
-      #   logger.info("✅ Saved ORG %s to DB", username)
-      # else:
-      #   logger.info("⚠️ Organization %s already in DB, skipped", username)
     else:
       logger.warning("Unexpected __typename for %s: %s", username, typename)
       db.record_dead_letter(
@@ -534,6 +543,12 @@ def handle_signal(sig, frame):
   global stop_flag
   logger.info("⚠️ Caught signal %s, shutting down gracefully...", sig)
   stop_flag = True
+
+def record_metric(redis_client, worker_id: str, metric: str, value: float):
+  minute = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+  key = f"metrics:{worker_id}:{metric}:{minute}"
+  redis_client.rpush(key, value)
+  redis_client.expire(key, 180)
 
 signal.signal(signal.SIGINT, handle_signal)
 signal.signal(signal.SIGTERM, handle_signal)
@@ -578,12 +593,19 @@ def consumer() -> None:
 
   try:
     while not stop_flag:
+      loop_start = time.perf_counter()
+
+      # --- Redis fetch ---
+      redis_fetch_start = time.perf_counter()
       try:
         result = redis_client.blpop(QUEUE_NAME, timeout=REDIS_BLPOP_TIMEOUT_S)
       except redis.exceptions.RedisError as e:
         logger.error("Redis error: %s", e)
         time.sleep(1)
         continue
+
+      redis_fetch_time = time.perf_counter() - redis_fetch_start
+      record_metric(redis_client, CONTAINER_ID, "redis_fetch_time", redis_fetch_time)
 
       if result is None:
         # Timeout tick: loop and check stop flag
@@ -627,7 +649,7 @@ def consumer() -> None:
         pass
 
       # Simple adaptive throttle based on remaining rate limit header is inside fetch; here a small pause
-      
+
       # 3600 / 0.8 = 4500 
       # 4500 from 5000 = 90%
       # time.sleep(0.8)
@@ -637,6 +659,10 @@ def consumer() -> None:
       # time.sleep(0.75)
 
       time.sleep(0.5)
+
+      # --- End of loop timing ---
+      loop_time = time.perf_counter() - loop_start
+      record_metric(redis_client, CONTAINER_ID, "loop_time", loop_time)
   
   finally:
     elapsed = time.time() - started
