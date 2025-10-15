@@ -236,9 +236,27 @@ def get_last_ingest_metrics_60min() -> list[dict]:
             "skipped": skipped,
             "processed": processed,
         })
-        
+
     return results[:-1]
 
+def get_telemetry_data(redis_client: redis.Redis, container_id: str, metric: str, last_minutes: int = 60):
+  now = datetime.now(timezone.utc)
+  data = []
+
+  for i in range(last_minutes):
+    minute_key = (now - timedelta(minutes=i)).strftime("%Y-%m-%d %H:%M")
+    key = f"metrics:{container_id}:{metric}:{minute_key}"
+
+    values = redis_client.lrange(key, 0, -1)
+    data.extend([float(v) for v in values])
+
+  return data
+
+def calculate_average(data: list) -> float:
+  """ avg """
+  if not data:
+    return 0.0
+  return sum(data) / len(data)
 
 # step 1 - get data from redis
 # step 2 - send data to cloud
@@ -253,6 +271,16 @@ def run_task3():
   try:
     count = int(redis_client.get(REQUEST_COUNTER_KEY) or 0)
 
+    worker_keys = redis_client.keys("metrics:*")
+    worker_ids = set()
+
+    for key in worker_keys:
+      parts = key.split(":")
+      if len(parts) >= 3:
+        worker_ids.add(parts[1])
+
+    print(f">>> Found {len(worker_ids)} unique worker IDs")
+
     prev_minute = (datetime.now(timezone.utc).replace(second=0, microsecond=0) - timedelta(minutes=1))
     minute_key = f"{MINUTE_REQUEST_COUNTER_KEY}:{prev_minute.strftime('%Y-%m-%d %H:%M')}"
     # minute_key = f"{MINUTE_REQUEST_COUNTER_KEY}:{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}"
@@ -262,7 +290,7 @@ def run_task3():
     skipped_minute   = int(redis_client.get(f"github:skipped_minute:{prev_minute_str}") or 0)
     processed_minute = int(redis_client.get(f"github:processed_minute:{prev_minute_str}") or 0)
 
-    print(f">>>ingest per minute: inserted={inserted_minute}, skipped={skipped_minute}, processed={processed_minute}")
+    print(f">>> Ingest per minute: inserted={inserted_minute}, skipped={skipped_minute}, processed={processed_minute}")
 
     minute_count = int(redis_client.get(minute_key) or 0)
 
@@ -278,12 +306,26 @@ def run_task3():
     dead_total      = int(g_dead      or 0)
     processed_total = int(g_processed or 0)
 
-    worker_keys = redis_client.keys("worker:*")
-    workers = []
-    for key in worker_keys:
+    workers_telemetry = []
+    for worker_id in worker_ids:
+      worker_metrics = {}
+
+      metrics = ["loop_time", "api_response_time", "db_insert_user_time", "db_insert_org_time", "redis_fetch_time"]
+      for metric in metrics:
+        data = get_telemetry_data(redis_client, worker_id, metric)
+        avg_value = calculate_average(data)
+        worker_metrics[metric] = round(avg_value, 6)
+
+      workers_telemetry.append({
+        "container_id": worker_id,
+        "metrics": worker_metrics
+      })
+
+    worker_state_keys = redis_client.keys("worker:*")
+    workers_state = []
+    for key in worker_state_keys:
       data = redis_client.hgetall(key)
-      # workers.append(data)
-      workers.append({
+      workers_state.append({
         "container_id": data.get("container_id"),
         "start_time": data.get("start_time"),
         "inserted": int(data.get("inserted") or 0),
@@ -295,10 +337,22 @@ def run_task3():
     print(f">>>data from redis - {datetime.now().strftime('%H:%M:%S')} | total GitHub requests = {count}")
     print(f"    ingest totals: inserted={inserted_total} skipped={skipped_total} dead={dead_total} processed={processed_total}")
     print(f">>>requests per minute: {minute_count}")
-    print(f"   active workers = {len(workers)}")
+    print(f"   active workers = {len(workers_state)}")
 
-    for w in workers:
-      raw_ts = w.get('start_time')
+    state_by_id = {w["container_id"]: w for w in workers_state if w.get("container_id")}
+    for rec in workers_telemetry:
+      wid = rec["container_id"]
+      st = state_by_id.get(wid)
+      if st:
+        rec["start_time"]      = st["start_time"]
+        rec["inserted_total"]  = st["inserted"]
+        rec["skipped_total"]   = st["skipped"]
+        rec["dead_total"]      = st["dead"]
+        rec["processed_total"] = st["processed"]
+
+    for w in workers_telemetry:
+      container_id = w.get('container_id')
+      raw_ts = redis_client.hget(f"worker:{container_id}", "start_time")
       if raw_ts:
         try:
           ts = float(raw_ts)
@@ -307,15 +361,14 @@ def run_task3():
           formatted = raw_ts
       else:
         formatted = "N/A"
-
-      print(f"      - id={w.get('container_id')} start_time={formatted}")
+      print(f"      - id={container_id} start_time={formatted}")
 
     milestones = estimate_milestones(count)
     for m in milestones:
       print(f"Milestone {m['target']:,} → za {m['minutes_needed']:.1f} min, około {m['eta'].strftime('%Y-%m-%d %H:%M:%S')}")
 
     insert_metrics(prev_minute, minute_count)
-    replace_workers_snapshot(workers)
+    replace_workers_snapshot(workers_state)
     insert_global_counter(datetime.now(timezone.utc), count)
     
     print(" ")
@@ -325,7 +378,7 @@ def run_task3():
       "timestamp": datetime.now(timezone.utc).isoformat(),
       "total_requests": count,
       "requests_last_minute": minute_count,
-      "workers": workers,
+      "workers": workers_telemetry,
       "next_milestone": {
         "target": milestones[0]['target'],
         "minutes_needed": milestones[0]['minutes_needed'],
