@@ -71,6 +71,23 @@ VALUES (%s, %s)
 ON CONFLICT (ts) DO NOTHING;
 """
 
+TELEMETRY_MINUTELY_SQL = """
+CREATE TABLE IF NOT EXISTS telemetry_minutely (
+minute        TIMESTAMPTZ NOT NULL,
+metric        TEXT        NOT NULL,        -- np. 'api_response_time'
+container_id  TEXT        NOT NULL,        -- worker id
+count         INT         NOT NULL,
+sum           DOUBLE PRECISION NOT NULL,
+avg           DOUBLE PRECISION NOT NULL,
+p50           DOUBLE PRECISION,
+p95           DOUBLE PRECISION,
+p99           DOUBLE PRECISION,
+min           DOUBLE PRECISION,
+max           DOUBLE PRECISION,
+PRIMARY KEY (minute, metric, container_id)
+);
+"""
+
 def get_pg_connection():
   return psycopg.connect(
     host=PG_HOST,
@@ -258,6 +275,10 @@ def calculate_average(data: list) -> float:
     return 0.0
   return sum(data) / len(data)
 
+# def collect_minute_samples(prev_minute_dt: datetime):
+
+# def persist_minute_stats(perv_minute_dt: datetime, buckets: dict):
+
 # step 1 - get data from redis
 # step 2 - send data to cloud
 
@@ -368,6 +389,8 @@ def run_task3():
       print(f"Milestone {m['target']:,} → za {m['minutes_needed']:.1f} min, około {m['eta'].strftime('%Y-%m-%d %H:%M:%S')}")
 
     insert_metrics(prev_minute, minute_count)
+    # collect minute samples
+    # persist minute stats
     replace_workers_snapshot(workers_state)
     insert_global_counter(datetime.now(timezone.utc), count)
     
