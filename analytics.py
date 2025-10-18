@@ -88,6 +88,22 @@ PRIMARY KEY (minute, metric, container_id)
 );
 """
 
+TELEMETRY_MINUTELY_GLOBAL_SQL = """
+CREATE TABLE IF NOT EXISTS telemetry_minutely_global (
+minute        TIMESTAMPTZ NOT NULL,
+metric        TEXT        NOT NULL,
+count         INT         NOT NULL,
+sum           DOUBLE PRECISION NOT NULL,
+avg           DOUBLE PRECISION NOT NULL,
+p50           DOUBLE PRECISION,
+p95           DOUBLE PRECISION,
+p99           DOUBLE PRECISION,
+min           DOUBLE PRECISION,
+max           DOUBLE PRECISION,
+PRIMARY KEY (minute, metric)
+);
+"""
+
 def get_pg_connection():
   return psycopg.connect(
     host=PG_HOST,
