@@ -90,16 +90,17 @@ PRIMARY KEY (minute, metric, container_id)
 
 TELEMETRY_MINUTELY_GLOBAL_SQL = """
 CREATE TABLE IF NOT EXISTS telemetry_minutely_global (
-minute        TIMESTAMPTZ NOT NULL,
-metric        TEXT        NOT NULL,
-count         INT         NOT NULL,
-sum           DOUBLE PRECISION NOT NULL,
-avg           DOUBLE PRECISION NOT NULL,
-p50           DOUBLE PRECISION,
-p95           DOUBLE PRECISION,
-p99           DOUBLE PRECISION,
-min           DOUBLE PRECISION,
-max           DOUBLE PRECISION,
+minute           TIMESTAMPTZ NOT NULL,
+metric           TEXT        NOT NULL,
+count            INT         NOT NULL,
+total_inserted   INT         NOT NULL,
+sum              DOUBLE PRECISION NOT NULL,
+avg              DOUBLE PRECISION NOT NULL,
+p50              DOUBLE PRECISION,
+p95              DOUBLE PRECISION,
+p99              DOUBLE PRECISION,
+min              DOUBLE PRECISION,
+max              DOUBLE PRECISION,
 PRIMARY KEY (minute, metric)
 );
 """
@@ -119,6 +120,8 @@ def ensure_table():
       cur.execute(CREATE_TABLE_SQL)
       cur.execute(CREATE_WORKERS_TABLE_SQL)
       cur.execute(CREATE_GLOBAL_TABLE_SQL)
+      cur.execute(TELEMETRY_MINUTELY_SQL)
+      cur.execute(TELEMETRY_MINUTELY_GLOBAL_SQL)
       conn.commit()
 
 def insert_metrics(minute: datetime, requests: int):
@@ -291,9 +294,130 @@ def calculate_average(data: list) -> float:
     return 0.0
   return sum(data) / len(data)
 
-# def collect_minute_samples(prev_minute_dt: datetime):
+def percentile(values, q):  # q w [0,100]
+  if not values:
+    return None
+  vals = sorted(values)
+  k = (len(vals)-1) * (q/100.0)
+  f = int(k)
+  c = min(f+1, len(vals)-1)
+  if f == c:
+    return vals[f]
+  d0 = vals[f] * (c-k)
+  d1 = vals[c] * (k-f)
+  return d0 + d1
 
-# def persist_minute_stats(perv_minute_dt: datetime, buckets: dict):
+def compute_stats(values: list[float]):
+  if not values:
+    return None
+  n = len(values)
+  s = sum(values)
+  m = s / n
+  return {
+    "count": n,
+    "sum": s,
+    "avg": m,
+    "min": min(values),
+    "max": max(values),
+    "p50": percentile(values, 50),
+    "p95": percentile(values, 95),
+    "p99": percentile(values, 99),
+  }
+
+def collect_minute_samples(prev_minute_dt: datetime):
+  minute_str = prev_minute_dt.strftime("%Y-%m-%d %H:%M")
+  keys = redis_client.scan_iter(f"metrics:*:*:{minute_str}")
+  buckets = {}
+  for k in keys:
+    parts = k.split(":")
+    if len(parts) < 4:
+      continue
+    worker_id = parts[1]
+    metric = parts[2]
+    raw = redis_client.lrange(k, 0, -1)
+    if not raw:
+      continue
+    values = [float(v) for v in raw]
+    buckets.setdefault((worker_id, metric), []).extend(values)
+  return buckets 
+
+def persist_minute_stats(prev_minute_dt: datetime, buckets: dict):
+  """
+  Zapisuje statystyki minutowe:
+    - per worker -> telemetry_minutely
+    - globalnie (agregat po wszystkich workerach) -> telemetry_minutely_global
+  """
+  # per worker
+  rows_worker = []
+  global_values: dict[str, list[float]] = {}
+
+  for (worker_id, metric), values in buckets.items():
+    st = compute_stats(values)
+    if not st:
+      continue
+    rows_worker.append((prev_minute_dt, metric, worker_id, st))
+    global_values.setdefault(metric, []).extend(values)
+
+  inserted_total = int(redis_client.get("github:inserted_total") or 0)
+
+  with get_pg_connection() as conn:
+    with conn.cursor() as cur:
+      # --- per-worker ---
+      for minute, metric, worker_id, st in rows_worker:
+        cur.execute("""
+          INSERT INTO telemetry_minutely
+            (minute, metric, container_id, count, sum, avg, p50, p95, p99, min, max)
+          VALUES
+            (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+          ON CONFLICT (minute, metric, container_id) DO UPDATE
+          SET count = EXCLUDED.count,
+              sum   = EXCLUDED.sum,
+              avg   = EXCLUDED.avg,
+              p50   = EXCLUDED.p50,
+              p95   = EXCLUDED.p95,
+              p99   = EXCLUDED.p99,
+              min   = EXCLUDED.min,
+              max   = EXCLUDED.max
+        """, (minute, metric, worker_id,
+              st["count"], st["sum"], st["avg"],
+              st["p50"], st["p95"], st["p99"], st["min"], st["max"]))
+
+      # --- global ---
+      for metric, vals in global_values.items():
+        stg = compute_stats(vals)
+        if not stg:
+          continue
+        cur.execute("""
+          INSERT INTO telemetry_minutely_global
+            (minute, metric, count, sum, avg, p50, p95, p99, min, max, inserted_total)
+          VALUES
+            (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+          ON CONFLICT (minute, metric) DO UPDATE
+          SET count = EXCLUDED.count,
+              sum   = EXCLUDED.sum,
+              avg   = EXCLUDED.avg,
+              p50   = EXCLUDED.p50,
+              p95   = EXCLUDED.p95,
+              p99   = EXCLUDED.p99,
+              min   = EXCLUDED.min,
+              max   = EXCLUDED.max,
+              inserted_total = EXCLUDED.inserted_total
+        """, (prev_minute_dt, metric,
+              stg["count"], stg["sum"], stg["avg"],
+              stg["p50"], stg["p95"], stg["p99"], stg["min"], stg["max"],
+              inserted_total))
+
+    conn.commit()
+
+def get_minute_avg_for_metric(container_id: str, metric: str, minute_dt: datetime) -> float:
+  """Średnia z DOKŁADNIE jednej minuty (minute_dt), z listy metrics:{id}:{metric}:{YYYY-MM-DD HH:MM}"""
+  key = f"metrics:{container_id}:{metric}:{minute_dt.strftime('%Y-%m-%d %H:%M')}"
+  values = redis_client.lrange(key, 0, -1)
+  if not values:
+    return 0.0
+  vals = [float(v) for v in values]
+  return sum(vals) / len(vals)
+
 
 # step 1 - get data from redis
 # step 2 - send data to cloud
@@ -308,7 +432,8 @@ def run_task3():
   try:
     count = int(redis_client.get(REQUEST_COUNTER_KEY) or 0)
 
-    worker_keys = redis_client.keys("metrics:*")
+    # worker_keys = redis_client.keys("metrics:*")
+    worker_keys = redis_client.scan_iter("metrics:*")
     worker_ids = set()
 
     for key in worker_keys:
@@ -349,8 +474,9 @@ def run_task3():
 
       metrics = ["loop_time", "api_response_time", "db_insert_user_time", "db_insert_org_time", "redis_fetch_time"]
       for metric in metrics:
-        data = get_telemetry_data(redis_client, worker_id, metric)
-        avg_value = calculate_average(data)
+        # data = get_telemetry_data(redis_client, worker_id, metric)
+        # avg_value = calculate_average(data)
+        avg_value = get_minute_avg_for_metric(worker_id, metric, prev_minute)
         worker_metrics[metric] = round(avg_value, 6)
 
       workers_telemetry.append({
@@ -358,7 +484,8 @@ def run_task3():
         "metrics": worker_metrics
       })
 
-    worker_state_keys = redis_client.keys("worker:*")
+    # worker_state_keys = redis_client.keys("worker:*")
+    worker_state_keys = redis_client.scan_iter("worker:*")
     workers_state = []
     for key in worker_state_keys:
       data = redis_client.hgetall(key)
@@ -405,13 +532,15 @@ def run_task3():
       print(f"Milestone {m['target']:,} → za {m['minutes_needed']:.1f} min, około {m['eta'].strftime('%Y-%m-%d %H:%M:%S')}")
 
     insert_metrics(prev_minute, minute_count)
-    # collect minute samples
-    # persist minute stats
     replace_workers_snapshot(workers_state)
     insert_global_counter(datetime.now(timezone.utc), count)
+
+    buckets = collect_minute_samples(prev_minute)
+    persist_minute_stats(prev_minute, buckets)
     
-    print(" ")
-    print(milestones[0])
+    if milestones:
+      print(" ")
+      print(milestones[0])
 
     snapshot = {
       "timestamp": datetime.now(timezone.utc).isoformat(),
