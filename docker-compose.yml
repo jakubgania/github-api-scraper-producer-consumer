@@ -1,7 +1,7 @@
 version: '3.8'
 services:
   postgres:
-    image: postgres:15
+    image: postgres:18
     container_name: github_postgres
     environment:
       POSTGRES_USER: postgres
@@ -15,7 +15,7 @@ services:
       - api-github-scraper
 
   analytics_postgres:
-    image: postgres:15
+    image: postgres:18
     container_name: analytics_postgres
     environment:
       POSTGRES_USER: analytics
