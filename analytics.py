@@ -343,9 +343,9 @@ def collect_minute_samples(prev_minute_dt: datetime):
 
 def persist_minute_stats(prev_minute_dt: datetime, buckets: dict):
   """
-  Zapisuje statystyki minutowe:
-    - per worker -> telemetry_minutely
-    - globalnie (agregat po wszystkich workerach) -> telemetry_minutely_global
+    Records minute statistics:
+      - per worker -> telemetry_minutely
+      - globally (aggregated across all workers) -> telemetry_minutely_global
   """
   # per worker
   rows_worker = []
@@ -410,7 +410,6 @@ def persist_minute_stats(prev_minute_dt: datetime, buckets: dict):
     conn.commit()
 
 def get_minute_avg_for_metric(container_id: str, metric: str, minute_dt: datetime) -> float:
-  """Średnia z DOKŁADNIE jednej minuty (minute_dt), z listy metrics:{id}:{metric}:{YYYY-MM-DD HH:MM}"""
   key = f"metrics:{container_id}:{metric}:{minute_dt.strftime('%Y-%m-%d %H:%M')}"
   values = redis_client.lrange(key, 0, -1)
   if not values:
