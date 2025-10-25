@@ -256,24 +256,24 @@ def get_last_24h_metrics_hourly() -> list[dict]:
   ]
 
 def get_last_ingest_metrics_60min() -> list[dict]:
-    now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-    results = []
-    for i in range(60):
-        minute = now - timedelta(minutes=(59 - i))
-        minute_str = minute.strftime("%Y-%m-%d %H:%M")
+  now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+  results = []
+  for i in range(60):
+    minute = now - timedelta(minutes=(59 - i))
+    minute_str = minute.strftime("%Y-%m-%d %H:%M")
 
-        inserted  = int(redis_client.get(f"github:inserted_minute:{minute_str}") or 0)
-        skipped   = int(redis_client.get(f"github:skipped_minute:{minute_str}") or 0)
-        processed = int(redis_client.get(f"github:processed_minute:{minute_str}") or 0)
+    inserted  = int(redis_client.get(f"github:inserted_minute:{minute_str}") or 0)
+    skipped   = int(redis_client.get(f"github:skipped_minute:{minute_str}") or 0)
+    processed = int(redis_client.get(f"github:processed_minute:{minute_str}") or 0)
 
-        results.append({
-            "timestamp": minute.isoformat(),
-            "inserted": inserted,
-            "skipped": skipped,
-            "processed": processed,
-        })
+    results.append({
+      "timestamp": minute.isoformat(),
+      "inserted": inserted,
+      "skipped": skipped,
+      "processed": processed,
+    })
 
-    return results[:-1]
+  return results[:-1]
 
 def get_telemetry_data(redis_client: redis.Redis, container_id: str, metric: str, last_minutes: int = 60):
   now = datetime.now(timezone.utc)
@@ -417,8 +417,6 @@ def get_minute_avg_for_metric(container_id: str, metric: str, minute_dt: datetim
   vals = [float(v) for v in values]
   return sum(vals) / len(vals)
 
-
-# step 1 - get data from redis
 # step 2 - send data to cloud
 
 def run_task1():
