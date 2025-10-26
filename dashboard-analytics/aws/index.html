@@ -509,14 +509,6 @@
       chart24h.setOption(option);
     }
 
-    // // Toggle style for 24h chart (bar/line)
-    // document.getElementById("toggleStyle24h").addEventListener("click", () => {
-    //   currentStyle24h = currentStyle24h === "bar" ? "line" : "bar";  // Zmiana typu wykresu
-    //   document.getElementById("toggleStyle24h").textContent = currentStyle24h === "bar" ? "Switch to Line" : "Switch to Bar";
-      
-    //   render24hChart(dataHours, currentStyle24h); // Przekazanie typu wykresu
-    // });
-
     // Function to filter data for 12 or 24 hours
     function filterDataForLastHours(data, hours) {
       const now = new Date();
@@ -684,12 +676,10 @@
       const isPanelVisible = !sidePanel.classList.contains("hidden");
 
       if (isPanelVisible) {
-        // 🔹 Ukryj side panel, pokaż metryki
         sidePanel.classList.add("hidden");
         metricsSection.classList.remove("hidden");
         toggleSidePanelBtn.textContent = "Show Side Panel";
       } else {
-        // 🔹 Pokaż side panel, ukryj metryki
         sidePanel.classList.remove("hidden");
         metricsSection.classList.add("hidden");
         toggleSidePanelBtn.textContent = "Hide Side Panel";
@@ -702,7 +692,6 @@
         chart24h?.resize();
       }, 200);
     });
-
 
   </script>
 </body>
