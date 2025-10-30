@@ -341,15 +341,16 @@
           }
         ]
       };
-
       addedAndSkippedChart.setOption(option);
     }
 
     let requestsChart;
+    
     function initChart() {
       const chartDom = document.getElementById("requestsChart");
       requestsChart = echarts.init(chartDom);
     }
+
     function updateChart(metrics) {
       if (!requestsChart) {
         initChart();
